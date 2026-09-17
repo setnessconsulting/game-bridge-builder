@@ -4,6 +4,7 @@
 **Candidate status:** not approved for production  
 **Candidate artifact:** `bridge-builder/0.1.0-qualification.1/`  
 **Artifact source commit:** `c6c27ac`
+**Owner decision record:** O-1 through O-8 approved as policy decisions on 2026-09-17. This resolves governance choices; implementation, human evidence, conformance sign-off, rollback, and release promotion remain open. O-7 executor names/dates and O-8 follow-up work are still required.
 
 This record separates executed engineering checks from owner- and human-gated release evidence. It
 does not promote the games-site catalog and does not authorize LevelBest integration.
@@ -32,11 +33,17 @@ does not promote the games-site catalog and does not authorize LevelBest integra
 
 ## Still required before promotion
 
-- O-8 owner decision before the additive v1.1 renderer-contract/content follow-ups are implemented;
-  no `BB-CONTRACT-1` or `BB-CONTENT-1` Jira issue has been fabricated.
+- O-8 is approved on 2026-09-17: `BB-CONTRACT-1` and `BB-CONTENT-1` are sanctioned bounded follow-ups,
+  but they are not yet Jira issues or completed work.
 - Full content catalogue and 14-skill supply-floor qualification beyond the one-bridge slice.
 - Ordered v1.1 view-model fields, required intent metadata, version-skew handling, retry telemetry,
   renderer-port lifecycle, and the complete break/return integration.
+- O-7 policy is approved, but named human executors and dates are still required for manual accessibility,
+  child/device, comparator, IP/provenance, WCAG sign-off, and rollback evidence.
+- O-2 requires criterion-level WCAG 2.2 AA assessment with no blanket conformance claim; the Relaxed build
+  remains an untimed accessibility path pending alternate-version verification.
+- O-4 requires the real Phaser Chromium SwiftShader lane to be green in CI before Gate F; a waiver may
+  continue engineering but cannot close Gate F or authorize promotion.
 - Full fake-clock hidden-tab, tamper, expiry, pause-budget, failover, teardown, and session-containment
   evidence across the final contract.
 - Real-device, phone/tablet/desktop/DPR/200%-zoom, child/device, comparator, IP/provenance, rollback,
