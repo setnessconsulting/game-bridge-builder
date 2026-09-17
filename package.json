@@ -11,7 +11,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "release:build": "npm run build && npm run release:manifest",
+    "release:manifest": "node scripts/create-release-manifest.mjs dist",
+    "release:check": "node scripts/create-release-manifest.mjs dist --check"
   },
   "dependencies": {
     "phaser": "4.2.1",
@@ -22,6 +26,8 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@axe-core/playwright": "^4.11.0",
+    "@playwright/test": "^1.57.0",
     "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^5.9.3",
     "vite": "^8.3.0",

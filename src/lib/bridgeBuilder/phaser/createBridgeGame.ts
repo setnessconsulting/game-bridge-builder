@@ -59,10 +59,14 @@ export async function createBridgeGame(
     options.PhaserModule ??
     ((await import("phaser")) as unknown as PhaserModuleLike);
 
-  // Minimal scene class that delegates to the controller.
-  class HostedBridgeScene {
+  // A real Phaser.Scene subclass is required by the browser runtime. The
+  // controller still knows only the narrow scene surface above, so the engine
+  // graph remains Phaser-free and the renderer cannot become authority.
+  const SceneBase = PhaserModule.Scene as unknown as new (
+    config?: string | Record<string, unknown>,
+  ) => object;
+  class HostedBridgeScene extends SceneBase {
     static KEY = BRIDGE_SCENE_KEY;
-    // Phaser assigns these at runtime.
     add!: {
       rectangle: (
         x: number,
@@ -101,6 +105,10 @@ export async function createBridgeGame(
     };
     cameras!: { main: { setBackgroundColor: (color: string) => void } };
     scale!: { width: number; height: number };
+
+    constructor() {
+      super({ key: BRIDGE_SCENE_KEY });
+    }
 
     create(): void {
       controller.attach(this as never);

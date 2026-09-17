@@ -1,0 +1,60 @@
+name: Bridge Builder release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable candidate version, for example 0.1.0-rc.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: bridge-builder-qualification
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run release:build
+        env:
+          GAME_RELEASE_VERSION: ${{ inputs.version }}
+          GAME_COMMIT_SHA: ${{ github.sha }}
+      - run: npm run release:check
+        env:
+          GAME_RELEASE_VERSION: ${{ inputs.version }}
+          GAME_COMMIT_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridge-builder-${{ inputs.version }}
+          path: dist
+      # The R2 upload is intentionally a candidate-only action. It never edits
+      # games-site's catalog or promotes LevelBest.
+      - name: Install Wrangler
+        run: npm install --global wrangler
+      - name: Upload immutable candidate to private R2
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            relative="${file#dist/}"
+            content_type="$(file --brief --mime-type "$file")"
+            npx wrangler r2 object put "setnessconsulting-games/bridge-builder/${VERSION}/${relative}" \
+              --file="$file" \
+              --content-type="$content_type" \
+              --remote
+          done < <(find dist -type f -print0)

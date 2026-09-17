@@ -17,6 +17,13 @@ export interface BridgeSceneHost {
   getInputGeneration: () => number;
 }
 
+type PointerLike = {
+  x?: number;
+  y?: number;
+  worldX?: number;
+  worldY?: number;
+};
+
 type RectLike = {
   setPosition: (x: number, y: number) => RectLike;
   setDisplaySize: (w: number, h: number) => RectLike;
@@ -62,6 +69,14 @@ type SceneLike = {
   scale: { width: number; height: number };
 };
 
+function pointerPoint(value: unknown): { x: number; y: number } | null {
+  if (!value || typeof value !== "object") return null;
+  const pointer = value as PointerLike;
+  const x = pointer.worldX ?? pointer.x;
+  const y = pointer.worldY ?? pointer.y;
+  return typeof x === "number" && typeof y === "number" ? { x, y } : null;
+}
+
 /**
  * Lightweight scene controller usable with real Phaser or test doubles.
  * Kept free of top-level `import("phaser")` so engine tests stay Phaser-free.
@@ -75,6 +90,46 @@ export class BridgeSceneController {
   private gapRect: RectLike | null = null;
   private spanLabel: TextLike | null = null;
   private remainingLabel: TextLike | null = null;
+  private pointerGeneration: number | null = null;
+  private draggingPieceId: string | null = null;
+  private readonly pointerDownHandler = (...args: unknown[]) => {
+    const point = pointerPoint(args[0]);
+    if (!point || !this.viewModel) return;
+
+    const hit = this.pieceAt(point.x, point.y);
+    if (hit?.role === "tray") {
+      this.pointerGeneration = this.host.getInputGeneration();
+      this.draggingPieceId = hit.pieceId;
+      this.host.emitIntent({ type: "selectPiece", pieceId: hit.pieceId });
+      return;
+    }
+
+    if (hit?.role === "placed") {
+      this.host.emitIntent({ type: "removePiece", pieceId: hit.pieceId });
+      return;
+    }
+
+    // Tap-then-tap uses the selected engine identity; no pixel coordinate
+    // becomes a length or a correctness input.
+    if (this.isOverGap(point.x, point.y) && this.viewModel.selectedPieceId) {
+      this.host.emitIntent({
+        type: "placePiece",
+        pieceId: this.viewModel.selectedPieceId,
+      });
+    }
+  };
+  private readonly pointerUpHandler = (...args: unknown[]) => {
+    const point = pointerPoint(args[0]);
+    if (!point || !this.viewModel) return;
+    const generation = this.pointerGeneration;
+    this.pointerGeneration = null;
+    const pieceId = this.draggingPieceId;
+    this.draggingPieceId = null;
+    if (!pieceId || generation !== this.host.getInputGeneration()) return;
+    if (this.isOverGap(point.x, point.y)) {
+      this.host.emitIntent({ type: "placePiece", pieceId });
+    }
+  };
   private destroyed = false;
 
   constructor(host: BridgeSceneHost) {
@@ -94,6 +149,8 @@ export class BridgeSceneController {
       fontSize: "13px",
       color: "#334455",
     });
+    scene.input.on("pointerdown", this.pointerDownHandler);
+    scene.input.on("pointerup", this.pointerUpHandler);
   }
 
   reconcile(vm: BridgeViewModel): void {
@@ -182,6 +239,12 @@ export class BridgeSceneController {
 
   destroy(): void {
     this.destroyed = true;
+    if (this.scene) {
+      this.scene.input.off("pointerdown", this.pointerDownHandler);
+      this.scene.input.off("pointerup", this.pointerUpHandler);
+    }
+    this.pointerGeneration = null;
+    this.draggingPieceId = null;
     this.gapRect?.destroy();
     this.gapRect = null;
     for (const rect of this.trayRects.values()) rect.destroy();
