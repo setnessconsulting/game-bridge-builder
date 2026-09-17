@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.vite/
+.wrangler/
+coverage/
+test-results/
+playwright-report/
+*.local
+*.log
+

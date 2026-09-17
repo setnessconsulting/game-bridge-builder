@@ -1,0 +1,52 @@
+/*
+ * Bridge Builder renders plank length at 24 CSS px per unit. A one-unit plank
+ * therefore has a 24px visual width, but the product accessibility contract
+ * requires a >=48px touch target. Keep the visible geometry honest and expand
+ * only the hit area. The matching margin prevents adjacent targets overlapping.
+ *
+ * Absolute insets resolve from the padding box, which sits inside the plank's
+ * 2px border. -14px per side is therefore required to reach 12px past the
+ * border box on each side (24px + 2*12px = 48px total hit target).
+ */
+.bb-piece[data-units="1"],
+.bb-piece[data-units="-1"] {
+  position: relative;
+  margin-inline: 12px;
+}
+
+.bb-piece[data-units="1"]::after,
+.bb-piece[data-units="-1"]::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline: -14px;
+  border-radius: 8px;
+}
+
+/*
+ * The bridge keeps its 42px visual beam height, but the open slot and placed
+ * planks are also keyboard/touch controls. Extend their hit areas without
+ * changing the bridge geometry. The vertical inset reaches 48px from the
+ * existing 42px border box; the horizontal inset covers a one-unit (24px)
+ * placed plank or a future one-unit gap.
+ */
+.bb-open,
+.bb-plank[role="button"] {
+  position: relative;
+}
+
+.bb-touch-target {
+  position: absolute;
+  inset-block: -5px;
+  inset-inline: -14px;
+  border-radius: 8px;
+  /* A nearly transparent paint layer makes the pseudo-element hit-testable. */
+  background: rgba(0, 0, 0, 0.01);
+  pointer-events: auto;
+  z-index: 1;
+}
+
+/* Prefer the placed plank when its expanded area meets the next open slot. */
+.bb-plank[role="button"] > .bb-touch-target {
+  z-index: 2;
+}
