@@ -12,6 +12,13 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
   await expect(frame.getByTestId("renderer-status")).toHaveText(/Canvas ready|DOM view active/);
   await expect(frame.getByTestId("bridge-dom-mirror")).toBeVisible();
 
+  // Exercise the actual candidate inside the hosted frame, not only the shell.
+  await frame.getByTestId("piece-plank-4").click();
+  await frame.getByTestId("bridge-open-slot").click();
+  await frame.getByTestId("piece-plank-6").click();
+  await frame.getByTestId("bridge-open-slot").click();
+  await expect(frame.getByTestId("bridge-summary")).toContainText("You made an exact fit");
+
   const assetResponse = await page.request.head(
     "/game-assets/bridge-builder/0.1.0-qualification.1/index.html",
   );
