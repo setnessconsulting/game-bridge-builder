@@ -92,7 +92,7 @@ describe("GAME-131 Phaser harness reconciliation", () => {
 
     const destroyed: string[] = [];
     const controller = new BridgeSceneController({
-      emitIntent: () => {},
+      emitPointerEvent: () => {},
       getInputGeneration: () => input.inputGeneration,
     });
     controller.attach({
