@@ -13,7 +13,7 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -21,8 +21,10 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: Focused Phaser unit tests
-        run: npx vitest run tests/bridgeBuilderPhaserHarness.test.ts tests/bridgeBuilderPhaserInput.test.ts tests/bridgeBuilderPhaserLifecycle.test.ts
+      - name: Lint
+        run: npm run lint
+      - name: Focused Phaser and GAME-132 unit tests
+        run: npx vitest run tests/bridgeBuilderPhaserHarness.test.ts tests/bridgeBuilderPhaserInput.test.ts tests/bridgeBuilderPhaserLifecycle.test.ts tests/game132VerticalSlice.test.ts
       - name: Full unit suite
         run: npm test
       - name: Type check
@@ -33,7 +35,7 @@ jobs:
   real-phaser-render:
     name: real-phaser-render
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -66,3 +68,7 @@ jobs:
             exit 1
           fi
           echo "Negative control failed for the intended render-oracle reason with exit code $status."
+      - name: Build GAME-132 browser slice
+        run: npm run build
+      - name: GAME-132 browser, responsive, reduced-motion, and axe qualification
+        run: npm run test:e2e:run

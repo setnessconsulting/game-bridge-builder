@@ -1,20 +1,29 @@
 /**
  * Phaser Bridge scene — reconciles BridgeViewModel only.
- * No composition math; lengths come from the view model.
+ * No composition math; lengths and verdicts come from the authoritative model.
  */
 
+import type { BridgePointerEvent, PointerPhase } from "./normalizeInput";
 import type { BridgeViewModel } from "../viewModel";
 
 export const BRIDGE_SCENE_KEY = "BridgeScene";
 
-export type BridgeIntentEmitter = (intent: {
-  type: string;
-  pieceId?: string;
-}) => void;
-
 export interface BridgeSceneHost {
-  emitIntent: BridgeIntentEmitter;
+  emitPointerEvent: (event: BridgePointerEvent) => void;
   getInputGeneration: () => number;
+  /** Fired only after Phaser Scene.create() has attached input/render surfaces. */
+  onSceneReady?: () => void;
+}
+
+export interface BridgeInteractionGeometry {
+  tray: Array<{
+    pieceId: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
+  gap: { x: number; y: number; width: number; height: number } | null;
 }
 
 type RectLike = {
@@ -24,6 +33,7 @@ type RectLike = {
   setData: (key: string, value: unknown) => RectLike;
   getData: (key: string) => unknown;
   setInteractive: () => RectLike;
+  on?: (event: string, fn: (...args: unknown[]) => void) => RectLike;
   destroy: () => void;
   x: number;
   y: number;
@@ -64,7 +74,8 @@ type SceneLike = {
 
 /**
  * Lightweight scene controller usable with real Phaser or test doubles.
- * Kept free of top-level `import("phaser")` so engine tests stay Phaser-free.
+ * It performs presentation hit-testing, then forwards pointer facts to the
+ * host normalizer. It never emits game intents or evaluates correctness.
  */
 export class BridgeSceneController {
   private host: BridgeSceneHost;
@@ -73,9 +84,23 @@ export class BridgeSceneController {
   private trayRects = new Map<string, RectLike>();
   private placedRects = new Map<string, RectLike>();
   private gapRect: RectLike | null = null;
+  private successMarker: RectLike | null = null;
   private spanLabel: TextLike | null = null;
   private remainingLabel: TextLike | null = null;
+  private feedbackLabel: TextLike | null = null;
   private destroyed = false;
+
+  private readonly onPointerMove = (...args: unknown[]) => {
+    this.forwardPointer("move", args[0]);
+  };
+
+  private readonly onPointerUp = (...args: unknown[]) => {
+    this.forwardPointer("up", args[0]);
+  };
+
+  private readonly onPointerCancel = (...args: unknown[]) => {
+    this.forwardPointer("cancel", args[0]);
+  };
 
   constructor(host: BridgeSceneHost) {
     this.host = host;
@@ -94,7 +119,19 @@ export class BridgeSceneController {
       fontSize: "13px",
       color: "#334455",
     });
+    this.feedbackLabel = scene.add.text(16, 56, "", {
+      fontFamily: "system-ui, sans-serif",
+      fontSize: "13px",
+      color: "#334455",
+    });
 
+    scene.input.on("pointermove", this.onPointerMove);
+    scene.input.on("pointerup", this.onPointerUp);
+    scene.input.on("pointerupoutside", this.onPointerCancel);
+    this.host.onSceneReady?.();
+
+    // GAME-166: React may reconcile before Phaser invokes Scene.create().
+    // Retain and replay that authoritative view model after scene attachment.
     if (this.viewModel) {
       this.reconcile(this.viewModel);
     }
@@ -115,16 +152,38 @@ export class BridgeSceneController {
     this.remainingLabel?.setText(
       vm.exact
         ? "exact fit"
-        : `remaining ${vm.remainingSpan} · filled ${vm.filledUnits}`
+        : vm.overfill
+          ? "overfill — see exact difference in the semantic companion"
+          : `remaining ${vm.remainingSpan} · filled ${vm.filledUnits}`
+    );
+    this.feedbackLabel?.setText(
+      vm.exact
+        ? vm.reducedMotion
+          ? "bridge complete · reduced motion"
+          : vm.crossing
+            ? "load marker crossing"
+            : "bridge complete"
+        : vm.incorrectSubmit
+          ? "check result shown below the canvas"
+          : "build to the exact span"
     );
 
     // Gap bed
     this.gapRect?.destroy();
     this.gapRect = scene.add
       .rectangle(gapX + gapW / 2, gapY, gapW, 10, 0x7aa0b8, 0.35)
-      .setData("role", "gap") as RectLike;
+      .setData("role", "gap")
+      .setInteractive() as RectLike;
+    this.gapRect.on?.("pointerup", () => {
+      this.host.emitPointerEvent({
+        phase: "up",
+        targetPieceId: null,
+        overGap: true,
+        generation: this.host.getInputGeneration(),
+      });
+    });
 
-    // Clear previous piece rects
+    // Clear previous piece rects.
     for (const rect of this.trayRects.values()) rect.destroy();
     for (const rect of this.placedRects.values()) rect.destroy();
     this.trayRects.clear();
@@ -150,9 +209,53 @@ export class BridgeSceneController {
       rect.setData("pieceId", piece.id);
       rect.setData("role", "tray");
       rect.setInteractive();
+      rect.on?.("pointerdown", () => {
+        this.host.emitPointerEvent({
+          phase: "down",
+          targetPieceId: piece.id,
+          overGap: false,
+          generation: this.host.getInputGeneration(),
+        });
+      });
       this.trayRects.set(piece.id, rect);
       trayX += w + 12;
     }
+
+    // Crossing is decorative and begins only after the engine has already
+    // produced exact=true. Reduced motion jumps directly to the far bank.
+    this.successMarker?.destroy();
+    this.successMarker = null;
+    if (vm.success) {
+      const markerX =
+        vm.crossing && !vm.reducedMotion ? gapX + gapW / 2 : gapX + gapW + 18;
+      this.successMarker = scene.add
+        .rectangle(markerX, gapY - 28, 20, 12, 0x176b4d, 1)
+        .setData("role", "success-marker") as RectLike;
+    }
+  }
+
+  /**
+   * Presentation geometry for deterministic input adapters/tests.
+   * These pixels are never converted into mathematical bridge lengths.
+   */
+  getInteractionGeometry(): BridgeInteractionGeometry {
+    return {
+      tray: [...this.trayRects.entries()].map(([pieceId, rect]) => ({
+        pieceId,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      })),
+      gap: this.gapRect
+        ? {
+            x: this.gapRect.x,
+            y: this.gapRect.y,
+            width: this.gapRect.width,
+            height: this.gapRect.height,
+          }
+        : null,
+    };
   }
 
   /** Hit-test helper for tests / adapter without real Phaser input. */
@@ -185,18 +288,44 @@ export class BridgeSceneController {
     return x >= cliff && x <= cliff + gapW && Math.abs(y - gapY) < 40;
   }
 
+  private forwardPointer(phase: PointerPhase, rawPointer: unknown): void {
+    if (this.destroyed || !this.scene) return;
+    if (!rawPointer || typeof rawPointer !== "object") return;
+    const pointer = rawPointer as { x?: unknown; y?: unknown };
+    const x = Number(pointer.x);
+    const y = Number(pointer.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+
+    const hit = this.pieceAt(x, y);
+    this.host.emitPointerEvent({
+      phase,
+      targetPieceId: hit?.role === "tray" ? hit.pieceId : null,
+      overGap: this.isOverGap(x, y),
+      generation: this.host.getInputGeneration(),
+    });
+  }
+
   destroy(): void {
     this.destroyed = true;
+    if (this.scene) {
+      this.scene.input.off("pointermove", this.onPointerMove);
+      this.scene.input.off("pointerup", this.onPointerUp);
+      this.scene.input.off("pointerupoutside", this.onPointerCancel);
+    }
     this.gapRect?.destroy();
+    this.successMarker?.destroy();
     this.gapRect = null;
+    this.successMarker = null;
     for (const rect of this.trayRects.values()) rect.destroy();
     for (const rect of this.placedRects.values()) rect.destroy();
     this.trayRects.clear();
     this.placedRects.clear();
     this.spanLabel?.destroy();
     this.remainingLabel?.destroy();
+    this.feedbackLabel?.destroy();
     this.spanLabel = null;
     this.remainingLabel = null;
+    this.feedbackLabel = null;
     this.scene = null;
     this.viewModel = null;
   }

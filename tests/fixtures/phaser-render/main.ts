@@ -152,7 +152,7 @@ const handle: BridgeGameHandle = await createBridgeGame({
   width: WIDTH,
   height: HEIGHT,
   host: {
-    emitIntent: () => {},
+    emitPointerEvent: () => {},
     getInputGeneration: () => 1,
   },
 });
