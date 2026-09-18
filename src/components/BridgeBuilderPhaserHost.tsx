@@ -17,7 +17,7 @@ import {
   createBridgeSession,
   type BridgeSessionState,
 } from "@/lib/bridgeBuilder/session";
-import type { BridgeIntent } from "@/lib/bridgeBuilder/intents";
+import type { BridgeIntentAction } from "@/lib/bridgeBuilder/intents";
 import { createBridgeLayout, withResize } from "@/lib/bridgeBuilder/layout";
 import { deriveBridgeViewModel } from "@/lib/bridgeBuilder/viewModel";
 import type { BridgePuzzle } from "@/lib/bridgeBuilder/types";
@@ -81,7 +81,7 @@ export default function BridgeBuilderPhaserHost({
     [session, layout, reducedMotion, draggingPieceId]
   );
 
-  function dispatch(intent: BridgeIntent) {
+  function dispatch(intent: BridgeIntentAction) {
     setSession((prev) => applyBridgeIntent(prev, intent).state);
   }
 

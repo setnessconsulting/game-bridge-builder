@@ -9,6 +9,8 @@ import { BridgeSceneController, BRIDGE_SCENE_KEY, type BridgeSceneHost } from ".
 export interface BridgeGameHandle {
   game: { destroy: (removeCanvas?: boolean) => void } | null;
   controller: BridgeSceneController;
+  /** Resolves only after the real Phaser scene has created and attached. */
+  ready: Promise<void>;
   destroy: () => void;
   reconcile: (vm: BridgeViewModel) => void;
   pause: () => void;
@@ -54,6 +56,10 @@ export async function createBridgeGame(
   const controller = new BridgeSceneController(options.host);
   let destroyed = false;
   let game: BridgeGameHandle["game"] = null;
+  let resolveReady!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
 
   const PhaserModule =
     options.PhaserModule ??
@@ -112,6 +118,7 @@ export async function createBridgeGame(
 
     create(): void {
       controller.attach(this as never);
+      resolveReady();
     }
   }
 
@@ -130,6 +137,7 @@ export async function createBridgeGame(
   const handle: BridgeGameHandle = {
     game,
     controller,
+    ready,
     reconcile(vm: BridgeViewModel) {
       if (destroyed) return;
       controller.reconcile(vm);

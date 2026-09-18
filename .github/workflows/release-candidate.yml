@@ -7,15 +7,37 @@ on:
         description: Immutable candidate version, for example 0.1.0-rc.1
         required: true
         type: string
+      publish_to_r2:
+        description: Upload to private R2 (requires the bridge-builder-qualification environment secrets)
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: bridge-builder-candidate-${{ inputs.version }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  publish:
+  validate:
     runs-on: ubuntu-latest
-    environment: bridge-builder-qualification
     steps:
+      - name: Validate qualification-only release input
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "codex/bridge-builder-wave1" ]] || {
+            echo "Candidate uploads are restricted to codex/bridge-builder-wave1."
+            exit 1
+          }
+          [[ "$VERSION" =~ ^0\.1\.0-qualification\.[0-9]+$ ]] || {
+            echo "Version must use the immutable 0.1.0-qualification.N format."
+            exit 1
+          }
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -38,10 +60,21 @@ jobs:
         with:
           name: bridge-builder-${{ inputs.version }}
           path: dist
+
+  publish-r2:
+    if: ${{ inputs.publish_to_r2 }}
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: bridge-builder-qualification
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: bridge-builder-${{ inputs.version }}
+          path: dist
       # The R2 upload is intentionally a candidate-only action. It never edits
       # games-site's catalog or promotes LevelBest.
       - name: Install Wrangler
-        run: npm install --global wrangler
+        run: npm install --global wrangler@4.134.0
       - name: Upload immutable candidate to private R2
         shell: bash
         env:
@@ -50,11 +83,39 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          while IFS= read -r -d '' file; do
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          prefix="bridge-builder/${VERSION}"
+          mapfile -d '' files < <(find dist -type f ! -name release-manifest.json -print0 | sort -z)
+          files+=(dist/release-manifest.json)
+
+          # Wrangler has no create-only switch. Preflight every immutable key;
+          # any existing object (including a partial prior upload) requires a
+          # new version, while unexpected API/auth errors fail closed.
+          for file in "${files[@]}"; do
+            relative="${file#dist/}"
+            key="setnessconsulting-games/${prefix}/${relative}"
+            set +e
+            output="$(wrangler r2 object get "$key" --remote --pipe 2>&1 >/dev/null)"
+            status=$?
+            set -e
+            if [[ $status -eq 0 ]]; then
+              echo "Refusing to overwrite immutable R2 object: ${key}"
+              exit 1
+            fi
+            if [[ "$output" != *"The specified key does not exist."* ]]; then
+              echo "Could not confirm the R2 object is absent: ${key}"
+              echo "$output"
+              exit 1
+            fi
+          done
+
+          for file in "${files[@]}"; do
             relative="${file#dist/}"
             content_type="$(file --brief --mime-type "$file")"
-            npx wrangler r2 object put "setnessconsulting-games/bridge-builder/${VERSION}/${relative}" \
+            wrangler r2 object put "setnessconsulting-games/${prefix}/${relative}" \
               --file="$file" \
               --content-type="$content_type" \
+              --cache-control="public, max-age=31536000, immutable" \
               --remote
-          done < <(find dist -type f -print0)
+          done

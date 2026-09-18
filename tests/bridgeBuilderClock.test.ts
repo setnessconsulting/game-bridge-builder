@@ -3,6 +3,7 @@ import {
   advanceBridgeClock,
   applyBridgeHostSignal,
   createBridgeClock,
+  expireBridgeClockAtCap,
   FREE_SITE_PAUSE_BUDGET_MS,
 } from "@/lib/bridgeBuilder/clock";
 
@@ -39,5 +40,14 @@ describe("Bridge Builder engine-owned clock", () => {
     const expired = applyBridgeHostSignal(clock, { type: "save-ack", atMs: 90_100 });
     expect(expired.expired).toBe(true);
     expect(expired.deadlineMs).toBe(90_000);
+  });
+
+  it("expires at the bridge-count cap without changing the monotonic deadline", () => {
+    const clock = createBridgeClock({ nowMs: 500, capBridges: 2 });
+    expect(expireBridgeClockAtCap(clock, 1)).toEqual(clock);
+    const capped = expireBridgeClockAtCap(clock, 2);
+    expect(capped.expired).toBe(true);
+    expect(capped.remainingMs).toBe(0);
+    expect(capped.deadlineMs).toBe(clock.deadlineMs);
   });
 });

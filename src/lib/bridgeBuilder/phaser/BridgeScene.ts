@@ -87,6 +87,7 @@ export class BridgeSceneController {
   private viewModel: BridgeViewModel | null = null;
   private trayRects = new Map<string, RectLike>();
   private placedRects = new Map<string, RectLike>();
+  private pieceLabels = new Map<string, TextLike>();
   private gapRect: RectLike | null = null;
   private spanLabel: TextLike | null = null;
   private remainingLabel: TextLike | null = null;
@@ -179,8 +180,10 @@ export class BridgeSceneController {
     // Clear previous piece rects
     for (const rect of this.trayRects.values()) rect.destroy();
     for (const rect of this.placedRects.values()) rect.destroy();
+    for (const label of this.pieceLabels.values()) label.destroy();
     this.trayRects.clear();
     this.placedRects.clear();
+    this.pieceLabels.clear();
 
     let cursor = gapX;
     for (const piece of vm.placed) {
@@ -190,6 +193,15 @@ export class BridgeSceneController {
       rect.setData("role", "placed");
       rect.setInteractive();
       this.placedRects.set(piece.id, rect);
+      this.pieceLabels.set(
+        piece.id,
+        scene.add.text(cursor + w / 2, gapY - 6, this.pieceFace(piece.units, piece.label), {
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "12px",
+          color: "#ffffff",
+          align: "center",
+        }),
+      );
       cursor += w;
     }
 
@@ -203,8 +215,24 @@ export class BridgeSceneController {
       rect.setData("role", "tray");
       rect.setInteractive();
       this.trayRects.set(piece.id, rect);
+      this.pieceLabels.set(
+        piece.id,
+        scene.add.text(trayX + w / 2, trayY - 5, this.pieceFace(piece.units, piece.label), {
+          fontFamily: "system-ui, sans-serif",
+          fontSize: "12px",
+          color: "#1a2b3c",
+          align: "center",
+        }),
+      );
       trayX += w + 12;
     }
+  }
+
+  private pieceFace(units: number, numeral: string): string {
+    if (this.viewModel?.flags.numberFace === "dots" && units > 0 && units <= 10) {
+      return Array.from({ length: units }, () => "●").join(" ");
+    }
+    return numeral;
   }
 
   /** Hit-test helper for tests / adapter without real Phaser input. */
@@ -249,8 +277,10 @@ export class BridgeSceneController {
     this.gapRect = null;
     for (const rect of this.trayRects.values()) rect.destroy();
     for (const rect of this.placedRects.values()) rect.destroy();
+    for (const label of this.pieceLabels.values()) label.destroy();
     this.trayRects.clear();
     this.placedRects.clear();
+    this.pieceLabels.clear();
     this.spanLabel?.destroy();
     this.remainingLabel?.destroy();
     this.spanLabel = null;

@@ -399,7 +399,7 @@ UX-authored questions are DQ-*; the spec-level owner decisions the decisions log
 | **O-3** | **Session-cap variance** (one cap vs band-specific) | Product owner | **(a)** single engine constant 90 s / 6 bridges. **(b) would invalidate the "90 seconds or 6 bridges" copy and the break window** and requires a written lock supersession — this is why the copy may not be changed unilaterally | Blocks if (b) chosen |
 | **O-4** | **CI enforcement timing vs Gate F** | Product owner + GAME-135 | **Approved 2026-09-17:** core suites and the real Phaser Chromium SwiftShader lane are green in CI before Gate F; a waiver may continue engineering but cannot close Gate F or authorize promotion. Owned by GAME-135 DoD | Blocks Gate F |
 | **O-7** | **Human-gate owner/date + the accessibility signer** | Product owner | **(a)** name one accountable reviewer per gate with dates, **including the AA conformance signer and the manual VoiceOver/NVDA executor**. Under (b) Gates D/E stay blocked and GAME-105 cannot reach Done — the §7.1 signer is unnameable without it | Blocks closure |
-| **O-8** | **Sanction of BB-CONTRACT-1 / BB-CONTENT-1** | Product owner | **Approved 2026-09-17:** both bounded follow-ups are sanctioned. They are not yet Jira issues or completed work; implementation and acceptance remain separate follow-up actions | No (sanction is not implementation) |
+| **O-8** | **Sanction of BB-CONTRACT-1 / BB-CONTENT-1** | Product owner | **Approved 2026-09-17:** both bounded follow-ups are sanctioned and tracked as GAME-294 / GAME-295. Implementation and acceptance remain open | No (sanction is not implementation) |
 
 ---
 

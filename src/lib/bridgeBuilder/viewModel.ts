@@ -10,6 +10,7 @@ import {
   availableTray,
 } from "./exactness";
 import type { BridgeIntentType } from "./intents";
+import { ROUND_CAP_BRIDGES, ROUND_CAP_SECONDS, type BridgeClockMode } from "./clock";
 import {
   bridgeSpanWidthPx,
   createBridgeLayout,
@@ -19,7 +20,7 @@ import {
 import type { BridgeSessionState } from "./session";
 import type { Piece, PlacementStatus } from "./types";
 
-export const BRIDGE_VIEW_MODEL_VERSION = "1.0.0" as const;
+export const BRIDGE_VIEW_MODEL_VERSION = "1.1.0" as const;
 
 export type BridgePresentationStateName =
   | "span"
@@ -58,6 +59,40 @@ export interface BridgePieceView {
   dragging: boolean;
   removable: boolean;
 }
+
+export interface BridgeSlotView {
+  /** Stable order in the engine-authored composition, never a pixel coordinate. */
+  slotIndex: number;
+  /** Exact unit offset from the start of the span. */
+  offsetUnits: number;
+  /** Exact unit contribution; signed pieces remain engine-authored values. */
+  units: number;
+  /** Present only when this slot is occupied by an engine-owned piece. */
+  pieceId: string | null;
+  open: boolean;
+}
+
+export interface BridgeViewModelSession {
+  mode: BridgeClockMode;
+  sessionId: string;
+  generation: number;
+  capSeconds: number;
+  capBridges: number;
+  /** Engine-monotonic deadline; null only in reducer-only test/harness views. */
+  deadlineMs: number | null;
+  remainingMs: number | null;
+  pauseBudgetRemainingMs: number | null;
+  expired: boolean;
+}
+
+export interface BridgeRendererCapabilities {
+  canPlace: boolean;
+  canRemove: boolean;
+  canReset: boolean;
+  canSubmit: boolean;
+}
+
+export type BridgeNumberFace = "numerals" | "dots";
 
 export interface BridgeViewModel {
   version: typeof BRIDGE_VIEW_MODEL_VERSION;
@@ -104,6 +139,22 @@ export interface BridgeViewModel {
   layout: BridgeLayoutConfig;
   spanWidthPx: number;
   presentationGeneration: number;
+  /** Ordered exact-unit composition, including the current open slot when one exists. */
+  slots: BridgeSlotView[];
+  /** Slot indices that accept the next engine-authorized placement. */
+  openSlots: number[];
+  /** Engine-authored placement order expressed as slot indices. */
+  fillOrder: number[];
+  /** Stable presentation seed derived from puzzle identity; never drives correctness. */
+  renderSeed: number;
+  session: BridgeViewModelSession;
+  capabilities: BridgeRendererCapabilities;
+  flags: {
+    reducedMotion: boolean;
+    responsive: BridgeResponsiveBucket;
+    mute: boolean;
+    numberFace: BridgeNumberFace;
+  };
   /** Active named states for Figma / contract mapping. */
   activeStates: BridgePresentationStateName[];
 }
@@ -114,6 +165,9 @@ export interface DeriveBridgeViewModelOptions {
   focusedPieceId?: string | null;
   placementPreviewPieceId?: string | null;
   reducedMotion?: boolean;
+  muted?: boolean;
+  numberFace?: BridgeNumberFace;
+  session?: Partial<BridgeViewModelSession>;
   crossing?: boolean;
 }
 
@@ -121,6 +175,14 @@ function responsiveBucket(width: number): BridgeResponsiveBucket {
   if (width < 600) return "phone";
   if (width < 960) return "tablet";
   return "desktop";
+}
+
+function renderSeedFor(puzzleId: string): number {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < puzzleId.length; index += 1) {
+    hash = Math.imul(hash ^ puzzleId.charCodeAt(index), 16_777_619);
+  }
+  return hash >>> 0;
 }
 
 function toPieceView(
@@ -194,6 +256,46 @@ export function deriveBridgeViewModel(
   const crossing = Boolean(options.crossing) && success;
   const reducedMotion = options.reducedMotion ?? false;
   const responsive = responsiveBucket(layout.canvasWidth);
+  const numberFace = options.numberFace ?? "numerals";
+  const session: BridgeViewModelSession = {
+    mode: options.session?.mode ?? "free",
+    sessionId: options.session?.sessionId ?? "unbound",
+    generation: options.session?.generation ?? state.presentationGeneration,
+    capSeconds: options.session?.capSeconds ?? ROUND_CAP_SECONDS,
+    capBridges: options.session?.capBridges ?? ROUND_CAP_BRIDGES,
+    deadlineMs: options.session?.deadlineMs ?? null,
+    remainingMs: options.session?.remainingMs ?? null,
+  pauseBudgetRemainingMs: options.session?.pauseBudgetRemainingMs ?? null,
+    expired: options.session?.expired ?? false,
+  };
+  const isLocked = session.expired;
+  const canPlace = !isLocked && state.phase === "building" && tray.length > 0;
+  const canRemove = !isLocked && state.phase === "building" && placed.length > 0;
+  const canSubmit = !isLocked && state.phase !== "exact" && placed.length > 0;
+  const slots: BridgeSlotView[] = [];
+  let offsetUnits = 0;
+  placed.forEach((piece, slotIndex) => {
+    slots.push({
+      slotIndex,
+      offsetUnits,
+      units: piece.units,
+      pieceId: piece.id,
+      open: false,
+    });
+    offsetUnits += piece.units;
+  });
+  const openSlots: number[] = [];
+  if (!isLocked && state.phase === "building" && remaining !== 0) {
+    const slotIndex = slots.length;
+    slots.push({
+      slotIndex,
+      offsetUnits,
+      units: remaining,
+      pieceId: null,
+      open: true,
+    });
+    openSlots.push(slotIndex);
+  }
 
   const activeStates: BridgePresentationStateName[] = [
     "span",
@@ -261,6 +363,23 @@ export function deriveBridgeViewModel(
     layout,
     spanWidthPx: bridgeSpanWidthPx(state.puzzle.gapUnits, layout),
     presentationGeneration: state.presentationGeneration,
+    slots,
+    openSlots,
+    fillOrder: placed.map((_, slotIndex) => slotIndex),
+    renderSeed: renderSeedFor(state.puzzle.id),
+    session,
+    capabilities: {
+      canPlace,
+      canRemove,
+      canReset: true,
+      canSubmit,
+    },
+    flags: {
+      reducedMotion,
+      responsive,
+      mute: options.muted ?? false,
+      numberFace,
+    },
     activeStates,
   };
 }

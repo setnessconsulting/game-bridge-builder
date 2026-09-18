@@ -9,7 +9,7 @@
 - **Status:** `In Progress`. The scope-lock is a requirements baseline, not implementation, conformance, or release evidence.
 - **Owner decisions:** O-1 through O-8 are approved policy decisions as of 2026-09-17. This resolves governance choices but does not assert implementation, human/device evidence, WCAG sign-off, rollback, production promotion, or LevelBest readiness.
 - **Remaining closure gate:** O-7 still requires named executors and dates for manual accessibility, child/device, comparator, IP/provenance, WCAG, and rollback evidence. Authored-only documents and assignments are not passed evidence.
-- **Sanctioned gaps:** O-8 sanctions `BB-CONTRACT-1` and `BB-CONTENT-1`; they remain proposed non-Jira follow-ups, not completed work.
+- **Sanctioned gaps:** O-8 sanctions `BB-CONTRACT-1` and `BB-CONTENT-1`, now tracked as GAME-294 and GAME-295; neither is completed work.
 
 ## Outcome
 
@@ -133,7 +133,7 @@ A documented, typed, versioned Phaser renderer/intents boundary exists; GAME-171
 
 ## Genuine gaps — sanctioned by O-8
 
-`BB-CONTRACT-1` and `BB-CONTENT-1` are sanctioned bounded follow-ups, but are not yet Jira issues or completed work. Their creation, implementation and evidence remain separate actions. `BB-CONTRACT-1` covers additive v1.1.0 session-deadline, `renderSeed`, ordered unit-based placement fields and required intent metadata, with no authority change. `BB-CONTENT-1` covers the curriculum catalogue of record, content-volume supply floor and `decoyHonesty` at scale so "14/14 reachable" is falsifiable. Combine/split and physics-as-authority remain out of contract.
+`BB-CONTRACT-1` and `BB-CONTENT-1` are sanctioned bounded follow-ups, now tracked as **GAME-294** and **GAME-295**; they are not completed work. `BB-CONTRACT-1` covers additive v1.1.0 session-deadline, `renderSeed`, ordered unit-based placement fields and required intent metadata, with no authority change. `BB-CONTENT-1` covers the curriculum catalogue of record, content-volume supply floor and `decoyHonesty` at scale so "14/14 reachable" is falsifiable. Combine/split and physics-as-authority remain out of contract.
 
 Rejected as stories (no duplicate ownership): audio production (GAME-133 + GAME-171), CI enforcement (CONSULTING-305 extended), telemetry/privacy verification (GAME-135 + GAME-134), curriculum statement (epic text). NG-09b host-shell story **withdrawn**.
 

@@ -3,7 +3,7 @@
  * Uses a monotonic inputGeneration so stale remount/tween callbacks cannot double-place.
  */
 
-import type { BridgeIntent } from "../intents";
+import type { BridgeIntentAction } from "../intents";
 
 export type PointerPhase = "down" | "move" | "up" | "cancel";
 
@@ -26,7 +26,7 @@ export interface InputNormalizerState {
 
 export interface NormalizeResult {
   state: InputNormalizerState;
-  intents: BridgeIntent[];
+  intents: BridgeIntentAction[];
 }
 
 export function createInputNormalizerState(
@@ -77,7 +77,7 @@ export function normalizePointerEvent(
     if (!event.targetPieceId) {
       return { state, intents: [] };
     }
-    const intents: BridgeIntent[] = [];
+    const intents: BridgeIntentAction[] = [];
     let selectedPieceId = state.selectedPieceId;
     if (event.targetPieceId !== state.selectedPieceId) {
       selectedPieceId = event.targetPieceId;

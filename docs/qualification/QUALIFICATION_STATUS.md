@@ -1,54 +1,44 @@
 # Bridge Builder standalone qualification status
 
-**Snapshot:** 2026-09-17  
-**Candidate status:** not approved for production  
-**Candidate artifact:** `bridge-builder/0.1.0-qualification.1/`  
-**Artifact source commit:** `c6c27ac`
-**Owner decision record:** O-1 through O-8 approved as policy decisions on 2026-09-17. This resolves governance choices; implementation, human evidence, conformance sign-off, rollback, and release promotion remain open. O-7 executor names/dates and O-8 follow-up work are still required.
+**Current snapshot:** 2026-09-17
 
-This record separates executed engineering checks from owner- and human-gated release evidence. It
-does not promote the games-site catalog and does not authorize LevelBest integration.
+**Candidate status:** `candidate-not-approved`
 
-## Executed in the standalone repository
+**Current candidate:** `0.1.0-qualification.2` — locally built; not yet published to R2
+
+**Source commit:** pending Wave 1 commit
+
+**Owner decisions:** O-1 through O-8 were approved as policy decisions on 2026-09-17. `GAME-294` / `GAME-295` now track the sanctioned follow-ups in Backlog; neither is completed. O-7 executors and dates remain open.
+
+This record distinguishes engineering checks from hosted, owner, and human-gated release evidence. It does not promote the games-site catalog and does not authorize LevelBest integration.
+
+## Current Wave 1 checks
 
 - TypeScript typecheck passes.
-- 115 Vitest tests pass, including exactness, renderer synchronization, clock, import-boundary, and
-  placement-invariance coverage.
-- Production Vite build passes with relative asset URLs.
-- Six local Playwright journeys pass in Chromium with `--use-gl=swiftshader`: real Phaser canvas and
-  DOM mirror, underfill/submit/retry/undo, overfill, keyboard, drag, reduced motion, mute, touch
-  sizing, and exact success summary.
-- The release manifest records the entry file, payload hashes, byte sizes, content types, commit, and
-  `candidate-not-approved` status.
+- 123 Vitest tests pass across 14 files.
+- Production Vite build and `release:check` pass for `0.1.0-qualification.2`; the Phaser bundle is approximately 1.38 MB, so performance-budget ratification and real-device measurements remain open.
+- Ten local Playwright tests pass in Chromium with `--use-gl=swiftshader`, including a real Phaser canvas plus DOM mirror, exact/underfill/overfill journeys, retry/undo, timer tamper checks, keyboard, drag, reduced motion, mute, touch sizing, and automated accessibility checks. The hosted-games-site test is skipped until the `.2` candidate is deployed.
+- The locally generated manifest remains `candidate-not-approved`; it does not assert CI or human approval. The candidate still needs a commit-backed release artifact and hosted verification.
 
-## Executed in the games-site preview
+## Hosting and promotion boundary
 
-- Preview URL: `https://codex-bridge-builder-qualifi.games-site-7pn.pages.dev/bridge-builder/play/`
-- The same-origin iframe loads the pinned static entry from private R2.
-- The entry returns `200` with `immutable` cache metadata.
-- The manifest returns `200` and remains `candidate-not-approved`.
-- A hosted-frame Playwright journey exercises the actual exact-fit path and summary.
-- Preview-only catalog state is enabled by `BRIDGE_BUILDER_PREVIEW_VERSION`; production `main` remains
-  `coming-soon`.
+- No hosted qualification has yet been completed for candidate `.2`. The existing Cloudflare preview is from the earlier qualification branch/version and is not evidence for this candidate.
+- The clean games-site preview branch pins `.2`; its change is separate from the preserved, dirty games-site checkout. Production `main` and LevelBest have not been changed by this wave.
+- The production games-site catalog must remain `coming-soon` until the full approval gate passes. A preview `playable` pointer is only for qualification and does not constitute approval.
 
 ## Still required before promotion
 
-- O-8 is approved on 2026-09-17: `BB-CONTRACT-1` and `BB-CONTENT-1` are sanctioned bounded follow-ups,
-  but they are not yet Jira issues or completed work.
-- Full content catalogue and 14-skill supply-floor qualification beyond the one-bridge slice.
-- Ordered v1.1 view-model fields, required intent metadata, version-skew handling, retry telemetry,
-  renderer-port lifecycle, and the complete break/return integration.
-- O-7 policy is approved, but named human executors and dates are still required for manual accessibility,
-  child/device, comparator, IP/provenance, WCAG sign-off, and rollback evidence.
-- O-2 requires criterion-level WCAG 2.2 AA assessment with no blanket conformance claim; the Relaxed build
-  remains an untimed accessibility path pending alternate-version verification.
-- O-4 requires the real Phaser Chromium SwiftShader lane to be green in CI before Gate F; a waiver may
-  continue engineering but cannot close Gate F or authorize promotion.
-- Full fake-clock hidden-tab, tamper, expiry, pause-budget, failover, teardown, and session-containment
-  evidence across the final contract.
-- Real-device, phone/tablet/desktop/DPR/200%-zoom, child/device, comparator, IP/provenance, rollback,
-  and criterion-level accessibility records with named executors and dates.
-- Q-01 through Q-23 scoring with no unresolved material `Below`, or an explicit owner-approved
-  deferral with rationale.
-- A separate approved LevelBest promotion after all of the above; LevelBest is unchanged in this
-  qualification wave.
+- Commit-backed release manifest and real R2 delivery of every hashed file, followed by the hosted same-origin frame journey and immutable-cache checks.
+- Green hosted CI for typecheck, unit/property/golden tests, production build, and the real Phaser Chromium SwiftShader lane.
+- Full fake-clock hidden-tab, pause-budget, expiry, tamper, stale-input, version-skew, failover, session-containment, and teardown coverage across the final contract.
+- Full curriculum catalogue and supply-floor qualification owned by `GAME-295`; additive renderer-contract acceptance owned by `GAME-294`.
+- Real-device, phone/tablet/desktop/DPR/200%-zoom, touch-target, and child/device results.
+- Named and dated manual accessibility review for each applicable WCAG 2.2 AA success criterion; no blanket accessibility claim. The Relaxed path remains an untimed candidate until alternate-version checks are recorded.
+- Comparator records, IP/provenance manifest, exercised rollback, Q-01 through Q-23 scoring with no unresolved material `Below` (or an explicit owner-approved deferral), and named human approvals.
+- A separate approved LevelBest promotion after all of the above. LevelBest remains unchanged in this qualification wave.
+
+## Historical candidate `.1` snapshot
+
+The previous record for `0.1.0-qualification.1` (source commit `c6c27ac`) documented 115 unit tests, six local SwiftShader journeys, and a hosted same-origin frame test. That evidence applies only to candidate `.1`; it does not qualify `.2`.
+
+At that snapshot, O-8 had sanctioned the two follow-ups but they had not yet been created. They are now tracked as `GAME-294` / `GAME-295`, and implementation/acceptance remain open.

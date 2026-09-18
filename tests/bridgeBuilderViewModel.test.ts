@@ -52,6 +52,7 @@ describe("GAME-130 view model contract", () => {
     });
 
     expect(vm.version).toBe(BRIDGE_VIEW_MODEL_VERSION);
+    expect(vm.version).toBe("1.1.0");
     expect(vm.span).toBe(10);
     expect(vm.filledUnits).toBe(4);
     expect(vm.remainingSpan).toBe(6);
@@ -65,6 +66,16 @@ describe("GAME-130 view model contract", () => {
     expect(vm.activeStates).toContain("underfill");
     expect(vm.activeStates).toContain("remainingSpan");
     expect(vm.responsive).toBe("tablet");
+    expect(vm.slots).toEqual([
+      { slotIndex: 0, offsetUnits: 0, units: 4, pieceId: "a", open: false },
+      { slotIndex: 1, offsetUnits: 4, units: 6, pieceId: null, open: true },
+    ]);
+    expect(vm.openSlots).toEqual([1]);
+    expect(vm.fillOrder).toEqual([0]);
+    expect(vm.renderSeed).toBeTypeOf("number");
+    expect(vm.session.sessionId).toBe("unbound");
+    expect(vm.capabilities).toMatchObject({ canPlace: true, canRemove: true, canSubmit: true });
+    expect(vm.flags).toMatchObject({ reducedMotion: false, mute: false, numberFace: "numerals" });
   });
 
   it("keeps pixel conversion at the view boundary", () => {
@@ -114,5 +125,40 @@ describe("GAME-130 view model contract", () => {
     expect(withCrossing.crossing).toBe(true);
     expect(withCrossing.activeStates).toContain("crossing");
     expect(withCrossing.filledUnits).toBe(without.filledUnits);
+    expect(withCrossing.openSlots).toEqual([]);
+    expect(withCrossing.fillOrder).toEqual([0, 1]);
+    expect(withCrossing.renderSeed).toBe(without.renderSeed);
+  });
+
+  it("exposes engine deadline metadata and accessibility presentation flags", () => {
+    const state = createBridgeSession(puzzle);
+    const vm = deriveBridgeViewModel(state, {
+      session: {
+        mode: "break",
+        sessionId: "break-session",
+        generation: 9,
+        capSeconds: 30,
+        capBridges: 1,
+        deadlineMs: 45_000,
+        remainingMs: 12_000,
+        pauseBudgetRemainingMs: 0,
+        expired: false,
+      },
+      reducedMotion: true,
+      muted: true,
+      numberFace: "dots",
+    });
+    expect(vm.session).toMatchObject({
+      mode: "break",
+      sessionId: "break-session",
+      generation: 9,
+      deadlineMs: 45_000,
+      remainingMs: 12_000,
+      pauseBudgetRemainingMs: 0,
+      expired: false,
+    });
+    expect(vm.flags).toMatchObject({ reducedMotion: true, mute: true, numberFace: "dots" });
+    expect(vm.openSlots).toEqual([0]);
+    expect(vm.capabilities.canSubmit).toBe(false);
   });
 });

@@ -1,7 +1,8 @@
 # Bridge Builder — Phaser Renderer / Intents Contract
 
-**Version:** `1.0.0` (`BRIDGE_VIEW_MODEL_VERSION`)  
-**Stories:** GAME-130 (contract), GAME-131 (adapter)  
+**Version:** `1.1.0` (`BRIDGE_VIEW_MODEL_VERSION`; additive to the v1.0.0 baseline)
+
+**Stories:** GAME-130 (contract baseline), GAME-131 (adapter), GAME-294 / BB-CONTRACT-1 (additive revision)
 **Exactness authority:** [RENDERER_BOUNDARY.md](./RENDERER_BOUNDARY.md)
 
 ## Architecture
@@ -10,11 +11,15 @@
 React host (session / a11y / telemetry)
         │
         ▼
-applyBridgeIntent  ──exact units & verdicts──►  BridgeViewModel
+applyBridgeIntent  ──exact units & verdicts──►  BridgeViewModel v1.1.0
         ▲                                              │
-        │ bounded intents                              ▼
-normalizeInput ◄──── pointer/tap/keyboard ──── Phaser scene
+        │ validated intent envelope                     ▼
+BridgeRendererPort ◄──── Phaser scene / DOM input adapter
 ```
+
+The renderer port owns mount, view-model reconciliation, intent subscription, reduced-motion/mute
+state, resize, and disposal. It is presentation-only. A same-major additive view-model is accepted;
+a major mismatch fails closed to the DOM mirror and emits `renderer_version_skew`.
 
 ## Presentation state names (Figma ↔ code)
 
@@ -45,7 +50,12 @@ These names are stable and map 1:1 to `BridgePresentationStateName`:
 
 ## Bounded intents
 
-Closed union (`src/lib/bridgeBuilder/intents.ts`):
+The eight action names remain closed (`src/lib/bridgeBuilder/intents.ts`). Every renderer-to-host
+intent is an envelope with required `seq`, `sessionId`, and `generation` fields. The host rejects
+unknown actions, malformed piece identities, wrong-session/generation input, duplicate sequences,
+and stale sequences before calling the reducer; rejected inputs emit `invalid_intent_rejected` or
+`stale_intent_dropped` and
+show a non-blocking retry affordance.
 
 - `selectPiece` `{ pieceId }`
 - `placePiece` `{ pieceId }`
@@ -55,6 +65,10 @@ Closed union (`src/lib/bridgeBuilder/intents.ts`):
 - `requestHint`
 - `continue`
 - `presentationComplete`
+
+The v1.1 view model adds engine-authored unit slots (`slots`, `openSlots`, `fillOrder`), deterministic
+`renderSeed`, monotonic session deadline/expiry data, renderer capabilities, and presentation flags.
+Slots carry exact unit offsets and identities; renderers do not reconstruct them from pixels.
 
 Equivalent input paths (must converge on the same intents):
 
@@ -74,7 +88,7 @@ Equivalent input paths (must converge on the same intents):
 Stable `piece.id` values connect:
 
 - React/DOM semantic controls (tray, lengths, selected, composition, remaining, verdict)
-- Phaser sprites / hit targets
+- Phaser sprites / hit targets, including optional g12 dot faces
 
 ## Figma / API-37 status
 

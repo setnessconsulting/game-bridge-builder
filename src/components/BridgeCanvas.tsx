@@ -1,99 +1,75 @@
-import { useEffect, useRef, useState } from "react";
-import type { BridgeIntent } from "@/lib/bridgeBuilder/intents";
-import { createBridgeLayout, withResize } from "@/lib/bridgeBuilder/layout";
+import { useEffect, useRef } from "react";
+import type {
+  BridgeIntent,
+  BridgeIntentAction,
+  BridgeIntentContext,
+} from "@/lib/bridgeBuilder/intents";
+import type { BridgeRendererPortOptions, BridgeRendererStatus } from "@/lib/bridgeBuilder/rendererPort";
 import type { BridgeViewModel } from "@/lib/bridgeBuilder/viewModel";
-import {
-  bumpInputGeneration,
-  createInputNormalizerState,
-} from "@/lib/bridgeBuilder/phaser/normalizeInput";
-import type { BridgeGameHandle } from "@/lib/bridgeBuilder/phaser/createBridgeGame";
+import { PhaserBridgeRendererPort } from "@/lib/bridgeBuilder/phaser/PhaserBridgeRendererPort";
 
 interface Props {
   viewModel: BridgeViewModel;
+  createIntent: (action: BridgeIntentAction, context: BridgeIntentContext) => BridgeIntent;
   onIntent: (intent: BridgeIntent) => void;
-  onStatusChange?: (status: "loading" | "ready" | "failed") => void;
+  onStatusChange?: (status: BridgeRendererStatus) => void;
+  onVersionSkew?: (rendererVersion: string, viewModelVersion: string) => void;
+  onInvalidIntent?: (reason: string) => void;
 }
 
-/** Real Phaser presentation surface. The DOM mirror remains the semantic source. */
-export default function BridgeCanvas({ viewModel, onIntent, onStatusChange }: Props) {
+/** Real Phaser surface. React remains the semantic and keyboard-accessible source. */
+export default function BridgeCanvas(props: Props) {
   const parentRef = useRef<HTMLDivElement | null>(null);
-  const gameRef = useRef<BridgeGameHandle | null>(null);
-  const inputRef = useRef(createInputNormalizerState());
-  const [layout, setLayout] = useState(() =>
-    createBridgeLayout({ canvasWidth: 640, canvasHeight: 360 })
-  );
+  const portRef = useRef<PhaserBridgeRendererPort | null>(null);
+  const propsRef = useRef(props);
+  propsRef.current = props;
 
   useEffect(() => {
-    let cancelled = false;
-    onStatusChange?.("loading");
     const parent = parentRef.current;
     if (!parent) return;
+    const port = new PhaserBridgeRendererPort();
+    portRef.current = port;
+    const unsubscribe = port.onIntent((intent) => propsRef.current.onIntent(intent));
+    const options: BridgeRendererPortOptions = {
+      createIntent: (action, context) => propsRef.current.createIntent(action, context),
+      onStatusChange: (status) => propsRef.current.onStatusChange?.(status),
+      onVersionSkew: (rendererVersion, viewModelVersion) =>
+        propsRef.current.onVersionSkew?.(rendererVersion, viewModelVersion),
+      onInvalidIntent: (reason) => propsRef.current.onInvalidIntent?.(reason),
+    };
 
-    void import("@/lib/bridgeBuilder/phaser/createBridgeGame")
-      .then(({ createBridgeGame }) =>
-        createBridgeGame({
-          parent,
-          width: layout.canvasWidth,
-          height: layout.canvasHeight,
-          host: {
-            emitIntent: (raw) => {
-              if (raw.type === "selectPiece" && raw.pieceId) {
-                onIntent({ type: "selectPiece", pieceId: raw.pieceId });
-              } else if (raw.type === "placePiece" && raw.pieceId) {
-                onIntent({ type: "placePiece", pieceId: raw.pieceId });
-              } else if (raw.type === "removePiece" && raw.pieceId) {
-                onIntent({ type: "removePiece", pieceId: raw.pieceId });
-              }
-            },
-            getInputGeneration: () => inputRef.current.inputGeneration,
-          },
-        })
-      )
-      .then((handle) => {
-        if (cancelled) {
-          handle.destroy();
-          return;
-        }
-        gameRef.current = handle;
-        onStatusChange?.("ready");
-        handle.reconcile(viewModel);
-      })
-      .catch(() => {
-        if (!cancelled) onStatusChange?.("failed");
-      });
+    void port.mount(parent, propsRef.current.viewModel, options).catch(() => {
+      // The accessible DOM mirror remains live when the optional canvas fails.
+      propsRef.current.onStatusChange?.("failed");
+    });
+
+    const observer = typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(([entry]) => {
+          if (!entry) return;
+          port.resize?.(
+            Math.max(320, Math.floor(entry.contentRect.width)),
+            Math.max(260, Math.floor(entry.contentRect.height)),
+          );
+        });
+    observer?.observe(parent);
 
     return () => {
-      cancelled = true;
-      inputRef.current = bumpInputGeneration(inputRef.current);
-      gameRef.current?.destroy();
-      gameRef.current = null;
+      observer?.disconnect();
+      unsubscribe();
+      port.dispose();
+      portRef.current = null;
     };
-    // The canvas mounts once for this candidate surface. View models reconcile below.
+    // The port is mounted once per session generation. State updates flow through
+    // applyViewModel below, while reset remounts the host with a new generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    gameRef.current?.reconcile(viewModel);
-  }, [viewModel]);
-
-  useEffect(() => {
-    const parent = parentRef.current;
-    if (!parent || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (!entry) return;
-      const width = Math.max(320, Math.floor(entry.contentRect.width));
-      const height = Math.max(260, Math.floor(entry.contentRect.height));
-      const dpr = typeof window === "undefined" ? 1 : Math.min(3, window.devicePixelRatio || 1);
-      setLayout((previous) => withResize(previous, { width, height, dpr }));
-      if (gameRef.current) {
-        void import("@/lib/bridgeBuilder/phaser/createBridgeGame").then(
-          ({ resizeBridgeGame }) => resizeBridgeGame(gameRef.current!, width, height),
-        );
-      }
-    });
-    observer.observe(parent);
-    return () => observer.disconnect();
-  }, []);
+    portRef.current?.applyViewModel(props.viewModel);
+    portRef.current?.setReducedMotion(props.viewModel.flags.reducedMotion);
+    portRef.current?.setMuted(props.viewModel.flags.mute);
+  }, [props.viewModel]);
 
   return (
     <div className="bb-candidate-canvas" ref={parentRef} data-testid="bridge-phaser-canvas-host">

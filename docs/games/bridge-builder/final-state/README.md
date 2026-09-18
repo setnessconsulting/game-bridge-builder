@@ -8,8 +8,9 @@ description carries the binding laws, constants, IDs and gates.
 **Status:** owner decisions O-1…O-8 were recorded and approved on 2026-09-17. Requirements are adopted;
 implementation, human evidence, criterion-level conformance sign-off, rollback, and release promotion remain
 open. O-7 executor names/dates and O-8 follow-up implementation remain required. The two bounded follow-ups
-(`BB-CONTRACT-1`, `BB-CONTENT-1`) are sanctioned, but are not yet Jira issues or completed work. Nothing here
-is implemented game code.
+are sanctioned and tracked as **GAME-294 / BB-CONTRACT-1** and **GAME-295 / BB-CONTENT-1**; both remain
+implementation and evidence work, not completed qualification. Nothing in this specification is itself
+implementation evidence.
 
 ## Documents
 

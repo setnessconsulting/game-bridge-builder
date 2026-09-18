@@ -279,7 +279,7 @@ The options and consequences below retain the review rationale. The approved rec
 - **O-5:** Blender is optional provenance-tracked source-art tooling for flattened 2D only; no runtime 3D/GLB.
 - **O-6:** games-site production-pointer promotion is a separate owner release action; LevelBest promotion is separate; retain DOM/React through exercised rollback and one clean cycle.
 - **O-7:** Human-gate, WCAG, and rollback owners/dates must name the candidate, environment, and durable evidence; assignment alone is not approval.
-- **O-8:** Both bounded follow-ups are sanctioned; sanction is not implementation or acceptance. They remain non-Jira gap records until separately created and implemented.
+- **O-8:** Both bounded follow-ups are sanctioned and tracked as GAME-294 / GAME-295; sanction and issue creation are not implementation or acceptance.
 
 **Residual alignment items (minor; not decisions).**
 - **Q7/DQ-6 (audio) — resolved:** the synthesized cue set is final state; no separate audio story and no commissioned scoring in v1 (reopens only via GAME-172 evidence + an accepted provenance/licensing owner — §4).
@@ -350,7 +350,7 @@ This table replaces v1's "no gaps" verdict. It states, per BRIEF §4 area, the *
 
 ### Genuine gaps requiring new Jira children
 
-Two, both **bounded and sanctioned under O-8 but not yet Jira issues or completed work**, plus no others. Everything else in BRIEF §4 is covered by the children above, a named cross-project dependency, or **epic text**.
+Two, both **bounded and sanctioned under O-8 and tracked as GAME-294 / GAME-295; neither is completed work**, plus no others. Everything else in BRIEF §4 is covered by the children above, a named cross-project dependency, or **epic text**.
 
 1. **BB-CONTRACT-1 — renderer contract v1.1.0 (additive only).** Objective: make the CRIT-6/MAJ-8/MAJ-15/MIN-9 resolutions buildable without changing authority semantics. Scope: session-deadline block in the view-model; `renderSeed`; ordered unit-based `slots`/`openSlots`/`fillOrder`; per-intent required-field declaration with `invalid_intent_rejected` telemetry; compatibility/downgrade path. AC: additive-only diff against v1.0.0; no change to equality, legality or scoring; downgrade path tested. Dependency: GAME-130 is the contract owner of record. **Not sanctioned to change authority semantics; combine/split and physics-as-authority remain out of contract.**
 2. **BB-CONTENT-1 — curriculum catalogue of record + content-volume supply floor.** Objective: make "14/14 reachable" falsifiable and reconcile the catalogue. Scope: catalogue edit (remove stale `3.MD.D.8` / future `6.G.A.1`, match `skills.ts`); supply-floor property test (≥12 distinct solvable puzzles per skill × band × tier Ⓟ); `decoyHonesty` test at content scale. AC: property tests green for all bands; catalogue matches `skills.ts`; no stale code. Extends the GAME-129 fixture family (no new story for the tests themselves).

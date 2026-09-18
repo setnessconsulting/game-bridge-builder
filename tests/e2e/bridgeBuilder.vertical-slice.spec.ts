@@ -5,12 +5,15 @@ test.describe("Bridge Builder qualification vertical slice", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("bridge-builder-candidate")).toBeVisible();
+    await expect(page.getByTestId("bridge-setup")).toBeVisible();
+    await page.getByTestId("bridge-start").click();
     await expect(page.getByTestId("bridge-dom-mirror")).toBeVisible();
   });
 
   test("runs the real Phaser canvas and DOM mirror together", async ({ page }) => {
     await expect(page.locator("canvas")).toBeVisible();
-    await expect(page.getByTestId("renderer-status")).toHaveText(/Canvas ready|DOM view active/);
+    // DOM fallback remains usable, but cannot count as real-render evidence.
+    await expect(page.getByTestId("renderer-status")).toHaveText("Canvas ready");
     const canvasPixels = await page.locator("canvas").first().evaluate((element) => {
       const canvas = element as HTMLCanvasElement;
       const context = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
@@ -19,6 +22,16 @@ test.describe("Bridge Builder qualification vertical slice", () => {
     expect(canvasPixels.width).toBeGreaterThan(0);
     expect(canvasPixels.height).toBeGreaterThan(0);
     expect(canvasPixels.context).toBe(true);
+  });
+
+  test("setup defaults to numerals and offers the optional g12 dot face", async ({ page }) => {
+    await page.reload();
+    await expect(page.getByTestId("setup-numerals")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("setup-dots")).toHaveAttribute("aria-pressed", "false");
+    await page.getByTestId("setup-dots").click();
+    await page.getByTestId("bridge-start").click();
+    await expect(page.getByTestId("piece-plank-4").getByTestId("dot-face")).toBeVisible();
+    await expect(page.getByTestId("piece-plank-4")).toHaveAttribute("aria-label", "4 units plank");
   });
 
   test("supports underfill, submit, retry, and undo", async ({ page }) => {
@@ -40,6 +53,33 @@ test.describe("Bridge Builder qualification vertical slice", () => {
     await page.getByTestId("bridge-open-slot").click();
     await expect(page.getByTestId("bridge-feedback")).toContainText("Too long by 2 units");
     await expect(page.getByTestId("bridge-reset")).toBeEnabled();
+  });
+
+  test("reset changes the puzzle state but cannot extend the engine deadline", async ({ page }) => {
+    await page.reload();
+    await page.clock.install();
+    await page.getByTestId("bridge-start").click();
+    await page.clock.fastForward(15_000);
+    await expect(page.getByTestId("bridge-clock")).toHaveText("75s");
+    await page.getByTestId("bridge-reset").click();
+    await page.clock.fastForward(5_000);
+    await expect(page.getByTestId("bridge-clock")).toHaveText("70s");
+  });
+
+  test("query and DOM clock edits cannot revive an expired round", async ({ page }) => {
+    await page.goto("/?roundSeconds=999&deadline=never");
+    await page.clock.install();
+    await page.getByTestId("bridge-start").click();
+    await expect(page.getByTestId("bridge-clock")).toHaveText("90s");
+    await page.evaluate(() => {
+      const clockLabel = document.querySelector('[data-testid="bridge-clock"]');
+      if (clockLabel) clockLabel.textContent = "999s";
+    });
+    await page.clock.fastForward(90_000);
+    await expect(page.getByTestId("bridge-expired")).toBeVisible();
+    await expect(page.getByTestId("bridge-clock")).toHaveText("0s");
+    await expect(page.getByTestId("piece-plank-4")).toBeDisabled();
+    await expect(page.getByTestId("bridge-reset")).toBeDisabled();
   });
 
   test("supports keyboard selection, placement, undo, and announcement replay", async ({ page }) => {

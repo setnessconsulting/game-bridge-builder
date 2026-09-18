@@ -82,6 +82,15 @@ export function advanceBridgeClock(
   return withTime(state, nowMs);
 }
 
+/** Expire on the engine-owned bridge-count cap without extending the deadline. */
+export function expireBridgeClockAtCap(
+  state: BridgeClockState,
+  bridgesSolved: number,
+): BridgeClockState {
+  if (state.expired || bridgesSolved < state.capBridges) return state;
+  return { ...state, remainingMs: 0, expired: true };
+}
+
 function resumeFreeClock(
   state: BridgeClockState,
   atMs: number

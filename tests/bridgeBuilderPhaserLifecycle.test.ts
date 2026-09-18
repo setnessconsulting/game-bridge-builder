@@ -208,6 +208,7 @@ describe("GAME-131 Phaser lifecycle", () => {
       resizeBridgeGame(
         {
           game: null,
+          ready: Promise.resolve(),
           controller: new BridgeSceneController({
             emitIntent: () => {},
             getInputGeneration: () => 1,

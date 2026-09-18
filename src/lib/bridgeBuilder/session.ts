@@ -15,7 +15,7 @@ import {
   exactFitVerdict,
   maxShimAbs,
 } from "./exactness";
-import type { BridgeIntent } from "./intents";
+import type { BridgeIntentAction } from "./intents";
 import {
   evaluatePlacement,
   formatDiff,
@@ -458,7 +458,7 @@ function presentationComplete(state: BridgeSessionState): BridgeSessionResult {
 
 export function applyBridgeIntent(
   state: BridgeSessionState,
-  intent: BridgeIntent
+  intent: BridgeIntentAction
 ): BridgeSessionResult {
   switch (intent.type) {
     case "selectPiece":

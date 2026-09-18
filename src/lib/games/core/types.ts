@@ -43,6 +43,9 @@ export type TelemetryEventType =
   | "piece_merge"
   | "piece_split"
   | "plank_lift"
+  | "invalid_intent_rejected"
+  | "stale_intent_dropped"
+  | "renderer_version_skew"
   | "invariant_violation";
 
 export interface TelemetryEvent {

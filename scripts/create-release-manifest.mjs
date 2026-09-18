@@ -18,6 +18,14 @@ const contentTypes = new Map([
   [".woff2", "font/woff2"],
 ]);
 
+const workflowRunUrl =
+  process.env.GITHUB_SERVER_URL &&
+  process.env.GITHUB_REPOSITORY &&
+  process.env.GITHUB_RUN_ID
+    ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+    : null;
+const inReleaseWorkflow = process.env.GITHUB_ACTIONS === "true" && Boolean(workflowRunUrl);
+
 async function filesUnder(directory, prefix = "") {
   const entries = await fs.readdir(directory, { withFileTypes: true });
   const files = [];
@@ -60,13 +68,24 @@ async function buildManifest() {
     entryFile: "index.html",
     manifestFile: "release-manifest.json",
     validationStatus: "candidate-not-approved",
-    validationEvidence: [
-      "typecheck",
-      "unit-tests",
-      "production-build",
-      "real-phaser-swiftshader",
-      "hosted-games-site-preview",
-    ],
+    validationEvidence: {
+      status: "candidate-not-approved",
+      workflowRun: workflowRunUrl,
+      checks: [
+        "typecheck",
+        "unit-tests",
+        "production-build",
+        "real-phaser-swiftshader",
+      ].map((name) => ({
+        name,
+        status: inReleaseWorkflow ? "executed-before-manifest" : "not-asserted",
+        reference: workflowRunUrl,
+      })),
+      pending: [
+        { name: "hosted-games-site-preview", status: "pending", reference: null },
+        { name: "named-human-approval-gates", status: "pending", reference: null },
+      ],
+    },
     // The manifest describes the payload files; hashing itself would be
     // circular, so release-manifest.json is intentionally excluded here.
     files,

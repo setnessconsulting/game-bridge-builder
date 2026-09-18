@@ -6,7 +6,7 @@
 
 **Adjudication order used (highest first).** (1) BRIEF §2 locked constraints: deterministic TypeScript engine is the sole correctness authority; renderer presents view-models and emits only the closed bounded intent union; no manipulative engagement; no fabricated evidence; comparators are references only; privacy/safety; no duplication of existing Jira work. (2) `RENDERER_BOUNDARY.md` / `PHASER_RENDERER_CONTRACT.md` (v1.0.0) and the closed 8-member intent union are **frozen** — where a critique implies changing them the resolution is to record the gap and require a separate approved GAME issue, never to rewrite the contract in the spec. (3) Extend existing children; state when no child can carry something and then give a bounded draft scope, or declare an explicit non-goal. (4) The named practical tie-breakers (per-SC accessibility conformance statement; one session/time authority — engine-owned monotonic deadline with host-supplied visibility events; non-extendable return contract; one canonical scorecard list; one comparator registry table with per-entry status; host-shell/return-contract surface owned by extending GAME-171's AC). (5) Decisiveness: reject what is factually wrong or lock-incompatible.
 
-**Labelling conventions used below.** `Ⓟ` = proposed threshold requiring ratification (never presented as an existing contract value); `⟨owner⟩` = owner decision/evidence-owner marker (see §6); `Q-01…Q-23` = the canonical scorecard dimension IDs (see CRIT-5); `BB-CONTRACT-1` / `BB-CONTENT-1` = the two bounded follow-ups sanctioned under O-8 but not yet Jira issues; `F1…F7` = the named semantic-mirror facts (see MAJ-5/MAJ-25); `[existing]` / `[required work]` keep their v1 meaning and must keep their citations.
+**Labelling conventions used below.** `Ⓟ` = proposed threshold requiring ratification (never presented as an existing contract value); `⟨owner⟩` = owner decision/evidence-owner marker (see §6); `Q-01…Q-23` = the canonical scorecard dimension IDs (see CRIT-5); `BB-CONTRACT-1` / `BB-CONTENT-1` = the two bounded follow-ups sanctioned under O-8 and now tracked as GAME-294 / GAME-295; implementation and acceptance remain open; `F1…F7` = the named semantic-mirror facts (see MAJ-5/MAJ-25); `[existing]` / `[required work]` keep their v1 meaning and must keep their citations.
 
 ---
 
@@ -163,7 +163,7 @@ readiness. O-7 remains the closure blocker.
 - **O-5:** Blender is optional provenance-tracked source-art tooling for flattened 2D only; no runtime 3D/GLB.
 - **O-6:** games-site production-pointer promotion is a separate owner release action; LevelBest promotion is separate; retain DOM/React through exercised rollback and one clean cycle.
 - **O-7:** Human-gate, WCAG, and rollback owners/dates must name the candidate, environment, and durable evidence; assignment alone is not approval.
-- **O-8:** Both bounded follow-ups are sanctioned; sanction is not implementation or acceptance. They remain non-Jira gap records until separately created and implemented.
+- **O-8:** Both bounded follow-ups are sanctioned and tracked as GAME-294 / GAME-295; sanction and issue creation are not implementation or acceptance.
 
 ---
 
