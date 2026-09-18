@@ -4,11 +4,11 @@
 
 **Candidate status:** `candidate-not-approved`
 
-**Current candidate:** `0.1.0-qualification.3` — published to private R2 and hosted for qualification only
+**Current candidate:** `0.1.0-qualification.4` — published to private R2 and hosted for qualification only
 
-**Candidate source commit:** `166fcfbac2da4e9b9c019e5ef84b74b098ee0363`
+**Candidate source commit:** `536b62e6b39b521fb8b367055b3e5716af634173` (merge includes GAME-132 mainline commit `9451447ac0ae0ca3959f1341664e70f9fc98a300`)
 
-**CI evidence:** [qualification run 35372884865](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35372884865) and [candidate build run 35372885068](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35372885068)
+**CI evidence:** [Wave 2 verify and real-render run 35380735369](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35380735369) and [candidate build run 35380735391](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35380735391)
 
 **Owner decisions:** O-1 through O-8 were approved as policy decisions on 2026-09-17. The `GAME-294` renderer-contract and `GAME-295` curriculum-supply implementations are present on the Wave 2 branch and pass their automated checks; Jira review/closeout is still open. Their proposed thresholds remain proposed, not ratified. O-7 executors and dates remain open.
 
@@ -22,7 +22,7 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
 - Ten local Playwright tests pass in Chromium with `--use-gl=swiftshader`, including a real Phaser canvas plus DOM mirror, exact/underfill/overfill journeys, retry/undo, timer tamper checks, keyboard, drag, reduced motion, mute, touch sizing, and automated accessibility checks.
 - The CI-backed release manifest records all four checks as executed before manifest creation and remains `candidate-not-approved`; named human approvals remain pending.
 
-## Wave 2 candidate checks — candidate `.3`
+## Historical Wave 2 candidate checks — candidate `.3`
 
 - `GAME-294`: additive BridgeViewModel v1.1.0 fields, sequenced/session-bound intents, fail-closed validation, renderer lifecycle, version-skew behavior, and retry telemetry are implemented with unit coverage. The frozen eight-intent union and TypeScript gameplay authority are unchanged.
 - `GAME-295`: the catalogue parity test covers all 14 skills and four bands; the seeded supply suite checks 12 distinct solvable puzzles per skill and generator tier (baseline/easier/harder), plus exact decompositions and decoy honesty. The 12-puzzle floor and related score thresholds remain proposed pending owner ratification.
@@ -31,12 +31,21 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
 - The deployed hosted test passed on 2026-09-18 (**1 passed**) against the actual preview route. It exercised the Phaser canvas and DOM mirror, completed an exact-fit journey, and checked every manifest-listed object’s status, content type, immutable cache header, byte count, and SHA-256.
 - The Phaser bundle is approximately 1.38 MB. This is a measurement, not an accepted performance budget; proposed budgets and real-device measurements remain open.
 
+## Current Wave 2 candidate checks — candidate `.4`
+
+- Candidate `.4` incorporates the merged GAME-132 Phaser qualification slice. Its resize loop fix derives a 16:9 canvas from width and skips no-op observer updates; the independent `/?game132=1` route remains available, while the final-contract Wave 2 candidate remains the default. The frozen eight-intent union and TypeScript gameplay authority remain unchanged.
+- Local verification passed: typecheck, lint, **177 unit tests across 17 files**, real Phaser rendering (**2 passed** under Chromium/SwiftShader, including the pixel oracle and deliberate-omission negative control), and browser journeys (**15 passed; the hosted-only test was skipped in the unhosted run**). The production bundle remains approximately 1.38 MB and still needs an owner-ratified budget and real-device measurement.
+- GitHub verification passed for the exact source commit: `verify` and `real-phaser-render` in [run 35380735369](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35380735369), plus typecheck, unit/E2E tests, release build, and manifest check in [candidate run 35380735391](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35380735391). The manifest identifies `536b62e6b39b521fb8b367055b3e5716af634173` and remains `candidate-not-approved`.
+- The exact five manifest-listed payload files were uploaded to private R2 under `bridge-builder/0.1.0-qualification.4/`, then read back and matched against manifest byte counts and SHA-256 values. The immutable `release-manifest.json` was published last. All six objects use the versioned candidate path; no source or credentials were copied into games-site.
+- The hosted Playwright journey passed (**1 passed**) on 2026-09-18 against the active games-site preview. It loaded the pinned `.4` iframe, started the game, reached the Phaser-ready state, exercised the DOM mirror through an exact-fit journey, and verified the manifest and each asset's response, content type, immutable cache header, byte count, and hash. A visible in-app-browser check also reached `Canvas ready` with the semantic DOM controls present.
+- The games-site local Astro check/build, functions check, lint, and 11 catalog/asset tests passed. The full-repository Prettier check still reports 29 files; the Bridge Builder-touched files pass a focused formatting check, and unrelated shared-site formatting debt was left untouched.
+
 ## Hosting and promotion boundary
 
-- Hosted preview: [Bridge Builder play route](https://b2de4a6f.games-site-7pn.pages.dev/bridge-builder/play/) from branch `codex/bridge-builder-wave2-preview`, source `84fe037`. The previous `.2` preview remains at `https://d9839350.games-site-7pn.pages.dev/bridge-builder/play/`.
-- The hosted Chromium/SwiftShader journey passes against the actual `.3` iframe: the frame pins the exact version, creates a real Phaser canvas after Start, shows the DOM mirror, completes an exact-fit round, reads the candidate manifest, and verifies every listed asset. The entry and assets return `200` with immutable cache metadata.
+- Hosted preview: [Bridge Builder play route](https://83cdd01b.games-site-7pn.pages.dev/bridge-builder/play/) from branch `codex/bridge-builder-wave2-preview`, source `be4078a`. The prior `.3` preview remains at [its versioned route](https://b2de4a6f.games-site-7pn.pages.dev/bridge-builder/play/); the older `.2` preview remains at `https://d9839350.games-site-7pn.pages.dev/bridge-builder/play/`.
+- The hosted Chromium journey passes against the actual `.4` iframe: the frame pins the exact version, creates a real Phaser canvas after Start, shows the DOM mirror, completes an exact-fit round, reads the candidate manifest, and verifies every listed asset. The entry and assets return `200` with immutable cache metadata. The separate GitHub SwiftShader lane verifies actual Phaser WebGL rendering and its negative control.
 - The manifest's hosted-preview field was pending when the immutable artifact was created; the dated post-upload hosted test result is recorded here, not written back into the versioned manifest.
-- Production [Bridge Builder page](https://games.setnessconsulting.com/bridge-builder/) remains `Coming soon` with no candidate pointer. The preview branch is separate from the preserved, dirty games-site checkout; production `main` and LevelBest have not been changed.
+- Production [Bridge Builder page](https://games.setnessconsulting.com/bridge-builder/) remains `Coming soon`; a read-only check of the production play route found no iframe and no `.4` pointer. Production is still on `main` source `119bf51`; LevelBest has not been changed.
 - A preview `playable` pointer is only for qualification and does not constitute approval. The release manifest remains `candidate-not-approved`.
 
 ## Still required before promotion
@@ -53,4 +62,4 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
 
 The previous record for `0.1.0-qualification.1` (source commit `c6c27ac`) documented 115 unit tests, six local SwiftShader journeys, and a hosted same-origin frame test. That evidence applies only to candidate `.1`; it does not qualify later candidate artifacts.
 
-At that snapshot, O-8 had sanctioned the two follow-ups but they had not yet been created. They are now tracked as `GAME-294` / `GAME-295`; candidate `.3` contains their implementation and automated evidence, while Jira review/closeout and all separate human/owner gates remain open.
+At that snapshot, O-8 had sanctioned the two follow-ups but they had not yet been created. They are now tracked as `GAME-294` / `GAME-295`; candidate `.4` includes their implementation and automated evidence, while Jira review/closeout and all separate human/owner gates remain open.
