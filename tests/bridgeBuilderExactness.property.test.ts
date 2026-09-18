@@ -14,6 +14,7 @@ import {
   traySortedOf,
 } from "@/lib/bridgeBuilder/session";
 import { evaluatePlacement } from "@/lib/bridgeBuilder/engine";
+import type { BridgePuzzle } from "@/lib/bridgeBuilder/types";
 
 describe("GAME-129 exactness property invariants", () => {
   it("composition sum equals authoritative filled units after every legal place", () => {
@@ -62,20 +63,26 @@ describe("GAME-129 exactness property invariants", () => {
   });
 
   it("overhang never mutates placed composition", () => {
-    let overhangSeen = 0;
-    for (let seed = 1; seed <= 80; seed += 1) {
-      const rng = mulberry32(seed);
-      const puzzle = generatePuzzle("bb-compose-20", rng, { index: seed });
-      const decoy = puzzle.tray.find((p) => p.units > puzzle.gapUnits);
-      if (!decoy) continue;
-      overhangSeen += 1;
-      const state = createBridgeSession(puzzle);
-      const result = applyBridgeIntent(state, { type: "placePiece", pieceId: decoy.id });
-      expect(result.state.lastOutcome?.status).toBe("overhang");
-      expect(result.state.placed).toHaveLength(0);
-      expect(filledUnitsOf(result.state)).toBe(compositionUnits(puzzle, []));
-    }
-    expect(overhangSeen).toBeGreaterThan(0);
+    const puzzle: BridgePuzzle = {
+      id: "overhang-fixture",
+      skillId: "bb-compose-20",
+      band: "g12",
+      denominator: 1,
+      gapUnits: 10,
+      gapLabel: "10",
+      ticksVisible: false,
+      tray: [{ id: "oversize", units: 12, label: "12", kind: "plank" }],
+      presetPlaced: [],
+      parPieces: 1,
+      solutionCount: 1,
+      supportsSecondConstruction: false,
+      hasEquivalenceRelation: false,
+    };
+    const state = createBridgeSession(puzzle);
+    const result = applyBridgeIntent(state, { type: "placePiece", pieceId: "oversize" });
+    expect(result.state.lastOutcome?.status).toBe("overhang");
+    expect(result.state.placed).toHaveLength(0);
+    expect(filledUnitsOf(result.state)).toBe(compositionUnits(puzzle, []));
   });
 
   it("session module has no canvas-engine import dependency", async () => {

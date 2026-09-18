@@ -18,8 +18,23 @@ BridgeRendererPort ◄──── Phaser scene / DOM input adapter
 ```
 
 The renderer port owns mount, view-model reconciliation, intent subscription, reduced-motion/mute
-state, resize, and disposal. It is presentation-only. A same-major additive view-model is accepted;
-a major mismatch fails closed to the DOM mirror and emits `renderer_version_skew`.
+state, resize, and disposal. It is presentation-only. A same-major view model at or above the
+renderer’s schema minor is accepted; an older schema or major mismatch fails closed before Phaser
+initialization, leaves the DOM mirror usable, and emits `renderer_version_skew`.
+
+## v1.0.0 → v1.1.0 compatibility path
+
+The v1.0.0 baseline carried exact unit pieces, labels, verdict/state flags, and presentation sizes,
+but the view model did not carry ordered engine-authored slots, `renderSeed`, the session deadline
+and expiry block, renderer capabilities/flags, or per-intent sequence/session/generation metadata.
+Its renderer actions were the same eight bounded names, without the v1.1 host envelope.
+
+The v1.1.0 producer adds those fields without changing exactness, legal actions, scoring, hints, or
+generation authority. The host wraps every renderer action with `seq`, `sessionId`, and `generation`
+before validation. The Phaser 1.1 renderer requires a v1.1-or-newer view-model schema in major 1;
+v1.0 producers remain on the DOM path until upgraded. Missing slot or deadline fields are never
+reconstructed from pixels and deadlines are never guessed. This is a fail-closed rollout path, not
+a silent v1.0-to-v1.1 adapter.
 
 ## Presentation state names (Figma ↔ code)
 

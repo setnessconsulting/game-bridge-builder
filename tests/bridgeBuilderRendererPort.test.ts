@@ -47,4 +47,29 @@ describe("Phaser renderer port version boundary", () => {
     expect(onStatusChange).toHaveBeenLastCalledWith("failed");
     port.dispose();
   });
+
+  it("rejects the v1.0 schema before Phaser initialization so the caller can keep the DOM path", async () => {
+    const viewModel = {
+      ...deriveBridgeViewModel(createBridgeSession(puzzle), {
+        layout: createBridgeLayout(),
+      }),
+      version: "1.0.0",
+    } as unknown as ReturnType<typeof deriveBridgeViewModel>;
+    const onStatusChange = vi.fn();
+    const onVersionSkew = vi.fn();
+    const port = new PhaserBridgeRendererPort();
+
+    await expect(
+      port.mount({} as HTMLElement, viewModel, {
+        createIntent: (action, context) => createBridgeIntent(action, context, 1),
+        onStatusChange,
+        onVersionSkew,
+      }),
+    ).rejects.toThrow("incompatible");
+
+    expect(onVersionSkew).toHaveBeenCalledWith("1.1.0", "1.0.0");
+    expect(onStatusChange).toHaveBeenNthCalledWith(1, "loading");
+    expect(onStatusChange).toHaveBeenLastCalledWith("failed");
+    port.dispose();
+  });
 });

@@ -26,7 +26,7 @@ const puzzle: BridgePuzzle = {
   gapLabel: "10",
   ticksVisible: true,
   tray: [
-    { id: "a", units: 4, label: "4", kind: "plank" },
+    { id: "a", units: 4, label: "4", kind: "plank", isDecoy: true },
     { id: "b", units: 6, label: "6", kind: "plank" },
     { id: "c", units: 3, label: "3", kind: "plank" },
     { id: "d", units: 7, label: "7", kind: "plank" },
@@ -61,6 +61,7 @@ describe("GAME-130 view model contract", () => {
     expect(vm.exact).toBe(false);
     expect(vm.pieceTray.some((p) => p.id === "a")).toBe(false);
     expect(vm.placed[0]?.units).toBe(4);
+    expect(vm.pieces.every((piece) => !("isDecoy" in piece))).toBe(true);
     expect(vm.placed[0]?.widthPx).toBe(96);
     expect(vm.focusedPieceId).toBe("b");
     expect(vm.activeStates).toContain("underfill");
@@ -160,5 +161,32 @@ describe("GAME-130 view model contract", () => {
     expect(vm.flags).toMatchObject({ reducedMotion: true, mute: true, numberFace: "dots" });
     expect(vm.openSlots).toEqual([0]);
     expect(vm.capabilities.canSubmit).toBe(false);
+  });
+
+  it("closes open slots on overfill and freezes every renderer capability after expiry", () => {
+    const overfilledState = {
+      ...createBridgeSession(puzzle),
+      placed: [puzzle.tray[3]!, puzzle.tray[1]!],
+      lastOutcome: { status: "overhang" as const, diff: 3, filledAfter: 13 },
+    };
+    const overfilled = deriveBridgeViewModel(overfilledState);
+    expect(overfilled.remainingSpan).toBe(-3);
+    expect(overfilled.openSlots).toEqual([]);
+    expect(overfilled.slots.every((slot) => !slot.open)).toBe(true);
+
+    const state = applyBridgeIntent(createBridgeSession(puzzle), {
+      type: "placePiece",
+      pieceId: "a",
+    }).state;
+    const expired = deriveBridgeViewModel(state, {
+      session: { sessionId: "expired-session", generation: 2, expired: true },
+    });
+    expect(expired.openSlots).toEqual([]);
+    expect(expired.capabilities).toEqual({
+      canPlace: false,
+      canRemove: false,
+      canReset: false,
+      canSubmit: false,
+    });
   });
 });

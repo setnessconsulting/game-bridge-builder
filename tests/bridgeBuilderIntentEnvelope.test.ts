@@ -70,6 +70,7 @@ describe("Bridge Builder v1.1 renderer intent envelope", () => {
   it("accepts additive same-major renderer versions and rejects a major mismatch", () => {
     expect(isBridgeViewModelCompatible("1.1.0")).toBe(true);
     expect(isBridgeViewModelCompatible("1.7.2")).toBe(true);
+    expect(isBridgeViewModelCompatible("1.0.0")).toBe(false);
     expect(isBridgeViewModelCompatible("2.0.0")).toBe(false);
     expect(isBridgeViewModelCompatible("invalid")).toBe(false);
     expect(isBridgeViewModelCompatible("1-not-semver")).toBe(false);
@@ -77,8 +78,13 @@ describe("Bridge Builder v1.1 renderer intent envelope", () => {
 
   it("keeps rejection telemetry typed and free of learner identifiers", () => {
     const sink = createSessionSink("free", () => 123);
+    sink.emit("invalid_intent_rejected", { reason: "invalid-piece-id", intentType: "placePiece" });
     sink.emit("stale_intent_dropped", { reason: "stale-generation", intentType: "submit" });
-    expect(validateEvent(sink.events()[0]!)).toBe(true);
-    expect(sink.events()[0]?.payload).toMatchObject({ reason: "stale-generation" });
+    expect(sink.events().every(validateEvent)).toBe(true);
+    expect(sink.events().map((event) => event.payload)).toMatchObject([
+      { reason: "invalid-piece-id", intentType: "placePiece" },
+      { reason: "stale-generation", intentType: "submit" },
+    ]);
+    expect(JSON.stringify(sink.events())).not.toMatch(/sessionId|pieceId|learnerId/i);
   });
 });

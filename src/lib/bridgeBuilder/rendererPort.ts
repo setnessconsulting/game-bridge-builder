@@ -28,13 +28,19 @@ export interface BridgeRendererPort {
   dispose(): void;
 }
 
-/** v1 renderers may consume additive fields, but never an unknown major. */
+/** v1.1 renderers accept additive v1.1+ views, but fail closed on pre-v1.1 schemas. */
 export function isBridgeViewModelCompatible(
   viewModelVersion: string,
   rendererVersion = "1.1.0",
 ): boolean {
-  const majorOf = (version: string) => /^(0|[1-9]\d*)\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.exec(version)?.[1];
-  const viewMajor = majorOf(viewModelVersion);
-  const rendererMajor = majorOf(rendererVersion);
-  return Boolean(viewMajor && rendererMajor && viewMajor === rendererMajor);
+  const versionParts = (version: string) =>
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.exec(version);
+  const view = versionParts(viewModelVersion);
+  const renderer = versionParts(rendererVersion);
+  return Boolean(
+    view &&
+      renderer &&
+      view[1] === renderer[1] &&
+      Number(view[2]) >= Number(renderer[2]),
+  );
 }

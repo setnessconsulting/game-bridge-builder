@@ -265,7 +265,7 @@ export function deriveBridgeViewModel(
     capBridges: options.session?.capBridges ?? ROUND_CAP_BRIDGES,
     deadlineMs: options.session?.deadlineMs ?? null,
     remainingMs: options.session?.remainingMs ?? null,
-  pauseBudgetRemainingMs: options.session?.pauseBudgetRemainingMs ?? null,
+    pauseBudgetRemainingMs: options.session?.pauseBudgetRemainingMs ?? null,
     expired: options.session?.expired ?? false,
   };
   const isLocked = session.expired;
@@ -285,7 +285,7 @@ export function deriveBridgeViewModel(
     offsetUnits += piece.units;
   });
   const openSlots: number[] = [];
-  if (!isLocked && state.phase === "building" && remaining !== 0) {
+  if (!isLocked && state.phase === "building" && remaining > 0) {
     const slotIndex = slots.length;
     slots.push({
       slotIndex,
@@ -371,7 +371,7 @@ export function deriveBridgeViewModel(
     capabilities: {
       canPlace,
       canRemove,
-      canReset: true,
+      canReset: !isLocked,
       canSubmit,
     },
     flags: {
