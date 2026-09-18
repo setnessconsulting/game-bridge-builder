@@ -137,6 +137,9 @@ export default function BridgeBuilderPhaserHost({
             applyNormalized(normalizePointerEvent(inputRef.current, event));
           },
           getInputGeneration: () => inputRef.current.inputGeneration,
+          onSceneReady: () => {
+            if (!cancelled) setReady(true);
+          },
         },
       });
       if (cancelled) {
@@ -145,7 +148,6 @@ export default function BridgeBuilderPhaserHost({
       }
       gameRef.current = handle;
       handle.reconcile(viewModel);
-      setReady(true);
     })();
 
     return () => {
@@ -236,6 +238,7 @@ export default function BridgeBuilderPhaserHost({
       data-testid="bridge-phaser-host"
       data-responsive={viewModel.responsive}
       data-reduced-motion={String(reducedMotion)}
+      data-ready={String(ready)}
     >
       <div
         ref={parentRef}
