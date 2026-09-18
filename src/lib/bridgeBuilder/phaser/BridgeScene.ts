@@ -94,11 +94,16 @@ export class BridgeSceneController {
       fontSize: "13px",
       color: "#334455",
     });
+
+    if (this.viewModel) {
+      this.reconcile(this.viewModel);
+    }
   }
 
   reconcile(vm: BridgeViewModel): void {
-    if (this.destroyed || !this.scene) return;
+    if (this.destroyed) return;
     this.viewModel = vm;
+    if (!this.scene) return;
     const scene = this.scene;
     const cliff = vm.layout.cliffPx;
     const unitPx = vm.layout.unitPx;
