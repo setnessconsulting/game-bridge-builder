@@ -123,7 +123,9 @@ export default function BridgeBuilderPhaserHost({
 
   function handleCanvasPointer(
     phase: "down" | "move" | "up" | "cancel",
-    event: ReactPointerEvent<HTMLDivElement>
+    event:
+      | ReactPointerEvent<HTMLDivElement>
+      | ReactMouseEvent<HTMLDivElement>
   ) {
     const canvas = parentRef.current?.querySelector("canvas");
     const controller = gameRef.current?.controller;
@@ -298,6 +300,14 @@ export default function BridgeBuilderPhaserHost({
         onPointerMove={(event) => handleCanvasPointer("move", event)}
         onPointerUp={(event) => handleCanvasPointer("up", event)}
         onPointerCancel={(event) => handleCanvasPointer("cancel", event)}
+        onMouseDown={(event) => handleCanvasPointer("down", event)}
+        onMouseMove={(event) => handleCanvasPointer("move", event)}
+        onMouseUp={(event) => handleCanvasPointer("up", event)}
+        onMouseLeave={(event) => {
+          if (inputRef.current.draggingPieceId) {
+            handleCanvasPointer("cancel", event);
+          }
+        }}
       />
 
       <section
