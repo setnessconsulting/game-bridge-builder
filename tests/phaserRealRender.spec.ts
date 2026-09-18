@@ -111,7 +111,7 @@ test("actual installed Phaser renders deterministic placed piece", async ({
 
   const pixel = await samplePixel(page);
   console.log("GAME166_PIXEL", JSON.stringify(pixel));
-  expect(pixel).toMatchObject(EXPECTED_RGB);
+  expect(pixel, "GAME166_RENDER_ORACLE expected the blue placed-piece pixel").toMatchObject(EXPECTED_RGB);
 
   const finalDiagnostics = await page.evaluate(() => {
     const harness = (window as typeof window & {
