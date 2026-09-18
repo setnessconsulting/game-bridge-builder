@@ -16,10 +16,17 @@ Then open the local Vite URL shown in the terminal. The game is served from the 
 ## Validate
 
 ```text
+npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run test:e2e
 ```
+
+The GAME-132 Phaser qualification slice is available at `/?game132=1`. Add
+`&reduced=1` to exercise the reduced-motion completion path. The default root
+continues to show the existing React game surface; the qualification slice does
+not change LevelBest or perform a renderer cutover.
 
 ## Repository boundaries
 
