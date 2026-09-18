@@ -1,0 +1,59 @@
+name: Bridge Builder CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Focused Phaser unit tests
+        run: npx vitest run tests/bridgeBuilderPhaserHarness.test.ts tests/bridgeBuilderPhaserInput.test.ts tests/bridgeBuilderPhaserLifecycle.test.ts
+      - name: Full unit suite
+        run: npm test
+      - name: Type check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+  real-phaser-render:
+    name: real-phaser-render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Record Playwright version
+        run: npx playwright --version
+      - name: Real installed-Phaser render lane
+        run: npm run test:phaser-render
+      - name: Prove pixel oracle rejects a deliberately omitted render object
+        shell: bash
+        run: |
+          set +e
+          GAME_166_BREAK_RENDER=1 npx playwright test -c playwright.phaser.config.ts -g "actual installed Phaser renders deterministic placed piece"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Negative control unexpectedly passed; the render oracle did not detect the omitted placed piece."
+            exit 1
+          fi
+          echo "Negative control failed as expected with exit code $status."
