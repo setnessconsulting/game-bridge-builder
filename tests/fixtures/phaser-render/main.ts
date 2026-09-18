@@ -123,6 +123,7 @@ const parent = document.querySelector<HTMLElement>("#game");
 if (!parent) {
   throw new Error("Missing GAME-166 fixture parent");
 }
+const fixtureParent = parent;
 
 const mode =
   new URLSearchParams(window.location.search).get("mode") === "negative"
@@ -147,7 +148,7 @@ if (mode === "positive") {
 const viewModel = deriveBridgeViewModel(session, { layout });
 
 const handle: BridgeGameHandle = await createBridgeGame({
-  parent,
+  parent: fixtureParent,
   width: WIDTH,
   height: HEIGHT,
   host: {
@@ -180,7 +181,7 @@ function getDiagnostics(): Game166Diagnostics {
     rendererIdentity: gl ? rendererIdentity(gl) : "none",
     glError: gl ? gl.getError() : -1,
     displayListCount: scene?.children?.list?.length ?? 0,
-    canvasCount: parent.querySelectorAll("canvas").length,
+    canvasCount: fixtureParent.querySelectorAll("canvas").length,
   };
 }
 
