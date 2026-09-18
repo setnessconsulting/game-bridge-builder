@@ -18,11 +18,7 @@ async function activateWithKeyboard(page: Page, control: Locator) {
   await page.keyboard.press("Enter");
 }
 
-async function dragTrayPiece(
-  page: Page,
-  currentUnits: number[],
-  targetUnits: number
-) {
+async function dragTrayPiece(page: Page, pieceId: string) {
   const canvas = page.locator('[data-testid="bridge-phaser-canvas-host"] canvas');
   const box = await canvas.boundingBox();
   if (!box) throw new Error("Phaser canvas has no bounding box");
@@ -30,33 +26,42 @@ async function dragTrayPiece(
     const element = node as HTMLCanvasElement;
     return { width: element.width, height: element.height };
   });
-
-  const widths = currentUnits.map((units) => Math.max(36, Math.abs(units) * 24 * 0.85));
-  let x = 24;
-  let centerX: number | null = null;
-  for (let index = 0; index < currentUnits.length; index += 1) {
-    const width = widths[index]!;
-    if (currentUnits[index] === targetUnits) {
-      centerX = x + width / 2;
-      break;
-    }
-    x += width + 12;
+  const rawGeometry = await page
+    .getByTestId("bridge-phaser-host")
+    .getAttribute("data-input-geometry");
+  if (!rawGeometry) throw new Error("Missing live Phaser input geometry");
+  const geometry = JSON.parse(rawGeometry) as {
+    tray: Array<{
+      pieceId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }>;
+    gap: { x: number; y: number; width: number; height: number } | null;
+  };
+  const piece = geometry.tray.find((candidate) => candidate.pieceId === pieceId);
+  if (!piece || !geometry.gap) {
+    throw new Error(
+      `Missing live Phaser geometry for ${pieceId}: ${rawGeometry}`
+    );
   }
-  if (centerX === null) throw new Error(`No tray piece for ${targetUnits}`);
 
-  const gapY = Math.max(120, size.height * 0.45);
-  const trayY = Math.min(size.height - 48, gapY + 90);
   const scaleX = box.width / size.width;
   const scaleY = box.height / size.height;
   const start = {
-    x: box.x + centerX * scaleX,
-    y: box.y + trayY * scaleY,
+    x: box.x + piece.x * scaleX,
+    y: box.y + piece.y * scaleY,
   };
   const end = {
-    x: box.x + 80 * scaleX,
-    y: box.y + gapY * scaleY,
+    x: box.x + geometry.gap.x * scaleX,
+    y: box.y + geometry.gap.y * scaleY,
   };
 
+  console.log(
+    "GAME132_DRAG_GEOMETRY",
+    JSON.stringify({ pieceId, box, size, piece, gap: geometry.gap, start, end })
+  );
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
   await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2, {
@@ -110,12 +115,10 @@ test.describe("GAME-132 one-bridge Phaser vertical slice", () => {
   test("real Phaser canvas pointer drag reaches the same exact bridge", async ({ page }) => {
     await openSlice(page);
 
-    // Phaser tray preserves the authoritative session tray order: 4,6,3,7,5.
-    await dragTrayPiece(page, [4, 6, 3, 7, 5], 4);
+    await dragTrayPiece(page, "a");
     await expect(page.getByTestId("bridge-composition")).toHaveText("4 = 4 units");
 
-    // After 4 is consumed the tray is 6,3,7,5.
-    await dragTrayPiece(page, [6, 3, 7, 5], 6);
+    await dragTrayPiece(page, "b");
     await expect(page.getByTestId("bridge-composition")).toHaveText("4 + 6 = 10 units");
     await expect(page.getByTestId("bridge-verdict")).toHaveText("exact");
   });
