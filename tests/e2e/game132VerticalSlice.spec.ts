@@ -106,12 +106,12 @@ test.describe("GAME-132 one-bridge Phaser vertical slice", () => {
   test("real Phaser canvas pointer drag reaches the same exact bridge", async ({ page }) => {
     await openSlice(page);
 
-    // Phaser tray ordering is authoritative view-model order: 3,4,5,6,7.
-    await dragTrayPiece(page, [3, 4, 5, 6, 7], 4);
+    // Phaser tray preserves the authoritative session tray order: 4,6,3,7,5.
+    await dragTrayPiece(page, [4, 6, 3, 7, 5], 4);
     await expect(page.getByTestId("bridge-composition")).toHaveText("4 = 4 units");
 
-    // After 4 is consumed the tray is 3,5,6,7.
-    await dragTrayPiece(page, [3, 5, 6, 7], 6);
+    // After 4 is consumed the tray is 6,3,7,5.
+    await dragTrayPiece(page, [6, 3, 7, 5], 6);
     await expect(page.getByTestId("bridge-composition")).toHaveText("4 + 6 = 10 units");
     await expect(page.getByTestId("bridge-verdict")).toHaveText("exact");
   });
