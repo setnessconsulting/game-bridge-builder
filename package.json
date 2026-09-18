@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:phaser-render": "playwright test tests/phaser4RealRendering.spec.ts --project=chromium --workers=1"
+    "test:phaser-render": "playwright test -c playwright.phaser.config.ts"
   },
   "dependencies": {
     "phaser": "4.2.1",
