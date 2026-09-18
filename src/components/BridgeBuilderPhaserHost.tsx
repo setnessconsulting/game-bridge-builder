@@ -158,7 +158,6 @@ export default function BridgeBuilderPhaserHost({
       setReady(false);
     };
     // Mount once per puzzle session; reconciliation happens below.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [puzzle.id]);
 
   useEffect(() => {
