@@ -15,6 +15,17 @@ export interface BridgeSceneHost {
   onSceneReady?: () => void;
 }
 
+export interface BridgeInteractionGeometry {
+  tray: Array<{
+    pieceId: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
+  gap: { x: number; y: number; width: number; height: number } | null;
+}
+
 type RectLike = {
   setPosition: (x: number, y: number) => RectLike;
   setDisplaySize: (w: number, h: number) => RectLike;
@@ -221,6 +232,30 @@ export class BridgeSceneController {
         .rectangle(markerX, gapY - 28, 20, 12, 0x176b4d, 1)
         .setData("role", "success-marker") as RectLike;
     }
+  }
+
+  /**
+   * Presentation geometry for deterministic input adapters/tests.
+   * These pixels are never converted into mathematical bridge lengths.
+   */
+  getInteractionGeometry(): BridgeInteractionGeometry {
+    return {
+      tray: [...this.trayRects.entries()].map(([pieceId, rect]) => ({
+        pieceId,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      })),
+      gap: this.gapRect
+        ? {
+            x: this.gapRect.x,
+            y: this.gapRect.y,
+            width: this.gapRect.width,
+            height: this.gapRect.height,
+          }
+        : null,
+    };
   }
 
   /** Hit-test helper for tests / adapter without real Phaser input. */
