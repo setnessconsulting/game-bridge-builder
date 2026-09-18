@@ -1,6 +1,14 @@
 name: Bridge Builder release candidate
 
 on:
+  # Bootstrap Wave 2 validation without requiring this branch-only workflow
+  # to be present on the repository default branch. R2 upload remains manual
+  # and requires separately configured GitHub environment secrets.
+  push:
+    branches:
+      - codex/bridge-builder-wave2
+    paths:
+      - .github/workflows/release-candidate.yml
   workflow_dispatch:
     inputs:
       version:
@@ -14,7 +22,7 @@ on:
         type: boolean
 
 concurrency:
-  group: bridge-builder-candidate-${{ inputs.version }}
+  group: bridge-builder-candidate-${{ inputs.version || '0.1.0-qualification.3' }}
   cancel-in-progress: false
 
 permissions:
@@ -27,7 +35,7 @@ jobs:
       - name: Validate qualification-only release input
         shell: bash
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ inputs.version || '0.1.0-qualification.3' }}
         run: |
           set -euo pipefail
           [[ "$GITHUB_REF_NAME" == "codex/bridge-builder-wave2" ]] || {
@@ -50,26 +58,26 @@ jobs:
       - run: npm run test:e2e
       - run: npm run release:build
         env:
-          GAME_RELEASE_VERSION: ${{ inputs.version }}
+          GAME_RELEASE_VERSION: ${{ inputs.version || '0.1.0-qualification.3' }}
           GAME_COMMIT_SHA: ${{ github.sha }}
       - run: npm run release:check
         env:
-          GAME_RELEASE_VERSION: ${{ inputs.version }}
+          GAME_RELEASE_VERSION: ${{ inputs.version || '0.1.0-qualification.3' }}
           GAME_COMMIT_SHA: ${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:
-          name: bridge-builder-${{ inputs.version }}
+          name: bridge-builder-${{ inputs.version || '0.1.0-qualification.3' }}
           path: dist
 
   publish-r2:
-    if: ${{ inputs.publish_to_r2 }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_r2 }}
     needs: validate
     runs-on: ubuntu-latest
     environment: bridge-builder-qualification
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: bridge-builder-${{ inputs.version }}
+          name: bridge-builder-${{ inputs.version || '0.1.0-qualification.3' }}
           path: dist
       # The R2 upload is intentionally a candidate-only action. It never edits
       # games-site's catalog or promotes LevelBest.
@@ -78,7 +86,7 @@ jobs:
       - name: Upload immutable candidate to private R2
         shell: bash
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ inputs.version || '0.1.0-qualification.3' }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
