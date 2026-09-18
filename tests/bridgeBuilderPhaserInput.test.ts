@@ -90,19 +90,16 @@ describe("GAME-131 Phaser input normalization", () => {
       generation: 3,
     });
     expect(first.intents).toEqual([{ type: "placePiece", pieceId: "b" }]);
+    expect(first.state.selectedPieceId).toBeNull();
     const second = normalizePointerEvent(first.state, {
       phase: "up",
       targetPieceId: null,
       overGap: true,
       generation: 3,
     });
-    // Selected still b, so tap-place could fire once more — host should bump
-    // generation after commit; without selection clear, second tap-place is legal.
-    // After place, dragging is cleared; selected remains for keyboard. Simulate commit bump:
-    const afterCommit = bumpInputGeneration({
-      ...first.state,
-      selectedPieceId: null,
-    });
+    expect(second.intents).toEqual([]);
+
+    const afterCommit = bumpInputGeneration(first.state);
     const staleDup = normalizePointerEvent(afterCommit, {
       phase: "up",
       targetPieceId: null,
@@ -110,7 +107,6 @@ describe("GAME-131 Phaser input normalization", () => {
       generation: 3,
     });
     expect(staleDup.intents).toEqual([]);
-    expect(second.intents).toEqual([{ type: "placePiece", pieceId: "b" }]);
   });
 
   it("cancels an in-flight drag without placing", () => {
