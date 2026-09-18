@@ -84,6 +84,7 @@ export default function BridgeBuilderPhaserHost({
   const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null);
   const [crossing, setCrossing] = useState(false);
   const [ready, setReady] = useState(false);
+  const [interactionGeometry, setInteractionGeometry] = useState("{}");
 
   const viewModel = useMemo(
     () =>
@@ -138,7 +139,12 @@ export default function BridgeBuilderPhaserHost({
           },
           getInputGeneration: () => inputRef.current.inputGeneration,
           onSceneReady: () => {
-            if (!cancelled) setReady(true);
+            if (cancelled) return;
+            setReady(true);
+            window.requestAnimationFrame(() => {
+              const geometry = gameRef.current?.controller.getInteractionGeometry();
+              if (geometry) setInteractionGeometry(JSON.stringify(geometry));
+            });
           },
         },
       });
@@ -164,7 +170,13 @@ export default function BridgeBuilderPhaserHost({
 
   useEffect(() => {
     gameRef.current?.reconcile(viewModel);
-  }, [viewModel]);
+    if (ready) {
+      window.requestAnimationFrame(() => {
+        const geometry = gameRef.current?.controller.getInteractionGeometry();
+        if (geometry) setInteractionGeometry(JSON.stringify(geometry));
+      });
+    }
+  }, [viewModel, ready]);
 
   useEffect(() => {
     if (session.phase !== "exact") return;
@@ -239,6 +251,7 @@ export default function BridgeBuilderPhaserHost({
       data-responsive={viewModel.responsive}
       data-reduced-motion={String(reducedMotion)}
       data-ready={String(ready)}
+      data-input-geometry={interactionGeometry}
     >
       <div
         ref={parentRef}
