@@ -1,0 +1,32 @@
+name: GAME-166 lockfile bootstrap
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  generate-playwright-lockfile:
+    if: github.head_ref == 'feat/game-166-real-phaser-render-smoke'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Generate npm metadata with Playwright
+        run: npm install --package-lock-only --save-dev @playwright/test@1.63.0
+      - name: Emit npm-generated files
+        shell: bash
+        run: |
+          echo 'PACKAGE_JSON_GZIP_BASE64_BEGIN'
+          gzip -c package.json | base64 -w0
+          echo
+          echo 'PACKAGE_JSON_GZIP_BASE64_END'
+          echo 'PACKAGE_LOCK_GZIP_BASE64_BEGIN'
+          gzip -c package-lock.json | base64 -w0
+          echo
+          echo 'PACKAGE_LOCK_GZIP_BASE64_END'
