@@ -11,6 +11,8 @@ export const BRIDGE_SCENE_KEY = "BridgeScene";
 export interface BridgeSceneHost {
   emitPointerEvent: (event: BridgePointerEvent) => void;
   getInputGeneration: () => number;
+  /** Fired only after Phaser Scene.create() has attached input/render surfaces. */
+  onSceneReady?: () => void;
 }
 
 type RectLike = {
@@ -119,6 +121,7 @@ export class BridgeSceneController {
     scene.input.on("pointermove", this.onPointerMove);
     scene.input.on("pointerup", this.onPointerUp);
     scene.input.on("pointerupoutside", this.onPointerCancel);
+    this.host.onSceneReady?.();
 
     // GAME-166: React may reconcile before Phaser invokes Scene.create().
     // Retain and replay that authoritative view model after scene attachment.
