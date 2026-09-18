@@ -250,10 +250,22 @@ export default function BridgeBuilderPhaserHost({
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry || cancelled) return;
+      // Size from the host box only. Deriving height from width (16:9) prevents a
+      // Phaser canvas ↔ ResizeObserver feedback loop that otherwise drifts tray/gap
+      // hit targets while a gesture is in flight.
       const width = Math.max(320, Math.floor(entry.contentRect.width));
-      const height = Math.max(240, Math.floor(entry.contentRect.height));
+      const height = Math.max(240, Math.round((width * 360) / 640));
       const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-      setLayout((prev) => withResize(prev, { width, height, dpr }));
+      setLayout((prev) => {
+        if (
+          prev.canvasWidth === width &&
+          prev.canvasHeight === height &&
+          prev.dpr === dpr
+        ) {
+          return prev;
+        }
+        return withResize(prev, { width, height, dpr });
+      });
       void import("@/lib/bridgeBuilder/phaser/createBridgeGame").then(
         ({ resizeBridgeGame }) => {
           if (!cancelled && gameRef.current) {
@@ -289,7 +301,8 @@ export default function BridgeBuilderPhaserHost({
         data-testid="bridge-phaser-canvas-host"
         style={{
           width: "100%",
-          minHeight: 360,
+          aspectRatio: "16 / 9",
+          minHeight: 240,
           borderRadius: 12,
           overflow: "hidden",
           background: "#e8f1f8",

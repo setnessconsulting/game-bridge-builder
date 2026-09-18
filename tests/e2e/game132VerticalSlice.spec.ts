@@ -20,11 +20,24 @@ async function activateWithKeyboard(page: Page, control: Locator) {
 
 async function dragTrayPiece(page: Page, pieceId: string) {
   const canvas = page.locator('[data-testid="bridge-phaser-canvas-host"] canvas');
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error("Phaser canvas has no bounding box");
-  const size = await canvas.evaluate((node) => {
+  await expect(page.getByTestId("bridge-phaser-host")).toHaveAttribute(
+    "data-ready",
+    "true"
+  );
+
+  // Prefer the live DOM box Phaser hit-testing uses (getBoundingClientRect),
+  // not Playwright's boundingBox, which can disagree while layout settles.
+  const metrics = await canvas.evaluate((node) => {
     const element = node as HTMLCanvasElement;
-    return { width: element.width, height: element.height };
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      bufferWidth: element.width,
+      bufferHeight: element.height,
+    };
   });
   const rawGeometry = await page
     .getByTestId("bridge-phaser-host")
@@ -47,20 +60,27 @@ async function dragTrayPiece(page: Page, pieceId: string) {
     );
   }
 
-  const scaleX = box.width / size.width;
-  const scaleY = box.height / size.height;
+  const scaleX = metrics.width / metrics.bufferWidth;
+  const scaleY = metrics.height / metrics.bufferHeight;
   const start = {
-    x: box.x + piece.x * scaleX,
-    y: box.y + piece.y * scaleY,
+    x: metrics.left + piece.x * scaleX,
+    y: metrics.top + piece.y * scaleY,
   };
   const end = {
-    x: box.x + geometry.gap.x * scaleX,
-    y: box.y + geometry.gap.y * scaleY,
+    x: metrics.left + geometry.gap.x * scaleX,
+    y: metrics.top + geometry.gap.y * scaleY,
   };
 
   console.log(
     "GAME132_DRAG_GEOMETRY",
-    JSON.stringify({ pieceId, box, size, piece, gap: geometry.gap, start, end })
+    JSON.stringify({
+      pieceId,
+      metrics,
+      piece,
+      gap: geometry.gap,
+      start,
+      end,
+    })
   );
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
