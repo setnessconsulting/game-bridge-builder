@@ -72,6 +72,9 @@ function mockPhaserModule(): PhaserModuleLike {
         setPosition() {
           return this;
         },
+        setOrigin() {
+          return this;
+        },
         destroy() {},
       }),
     };
@@ -176,6 +179,9 @@ describe("GAME-131 Phaser lifecycle", () => {
             return this;
           },
           setPosition() {
+            return this;
+          },
+          setOrigin() {
             return this;
           },
           destroy() {},

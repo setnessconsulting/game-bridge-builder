@@ -1,6 +1,43 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+interface TrayPiece {
+  id: string;
+  units: number;
+}
+
+function exactSolution(pieces: TrayPiece[], target: number): string[] {
+  for (let mask = 1; mask < 1 << pieces.length; mask += 1) {
+    let total = 0;
+    const ids: string[] = [];
+    for (let index = 0; index < pieces.length; index += 1) {
+      if ((mask & (1 << index)) === 0) continue;
+      total += pieces[index]!.units;
+      ids.push(pieces[index]!.id);
+    }
+    if (total === target) return ids;
+  }
+  throw new Error(`No exact solution found for target ${target}`);
+}
+
+async function solveCurrentQuestion(page: import("@playwright/test").Page): Promise<void> {
+  const target = Number(await page.getByTestId("bridge-question").getAttribute("data-gap-units"));
+  const pieces = await page
+    .getByRole("group", { name: "Piece tray" })
+    .locator("button")
+    .evaluateAll((buttons) =>
+      buttons.map((button) => ({
+        id: (button as HTMLButtonElement).dataset.pieceId ?? "",
+        units: Number((button as HTMLButtonElement).dataset.units),
+      })),
+    );
+
+  for (const id of exactSolution(pieces, target)) {
+    await page.locator(`[data-piece-id="${id}"]`).click();
+    await page.getByTestId("bridge-open-slot").click();
+  }
+}
+
 test.describe("Bridge Builder qualification vertical slice", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
@@ -119,13 +156,26 @@ test.describe("Bridge Builder qualification vertical slice", () => {
     expect(results.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious")).toEqual([]);
   });
 
-  test("completes the exact journey and summary", async ({ page }) => {
-    await page.getByTestId("piece-plank-4").click();
-    await page.getByTestId("bridge-open-slot").click();
-    await page.getByTestId("piece-plank-6").click();
-    await page.getByTestId("bridge-open-slot").click();
-    await expect(page.getByTestId("bridge-feedback")).toContainText("Exact fit");
-    await expect(page.getByTestId("bridge-summary")).toContainText("You made an exact fit");
-    await expect(page.getByTestId("bridge-summary")).toContainText("12 points");
+  test("advances through six distinct questions without repeating the same one consecutively", async ({ page }) => {
+    let previousGap = Number(await page.getByTestId("bridge-question").getAttribute("data-gap-units"));
+
+    for (let bridgeNumber = 1; bridgeNumber <= 6; bridgeNumber += 1) {
+      await expect(page.getByTestId("bridge-progress")).toHaveText(`Bridge ${bridgeNumber} of 6`);
+      const puzzleId = await page.getByTestId("bridge-question").getAttribute("data-puzzle-id");
+      await solveCurrentQuestion(page);
+
+      if (bridgeNumber < 6) {
+        await expect(page.getByTestId("bridge-progress")).toHaveText(`Bridge ${bridgeNumber + 1} of 6`);
+        const question = page.getByTestId("bridge-question");
+        await expect(question).not.toHaveAttribute("data-puzzle-id", puzzleId ?? "");
+        const nextGap = Number(await question.getAttribute("data-gap-units"));
+        expect(nextGap).not.toBe(previousGap);
+        previousGap = nextGap;
+        await expect(page.getByTestId("bridge-summary")).toHaveCount(0);
+      }
+    }
+
+    await expect(page.getByTestId("bridge-summary")).toContainText("You solved 6 bridges");
+    await expect(page.getByTestId("bridge-summary")).toContainText(/\d+ points/);
   });
 });

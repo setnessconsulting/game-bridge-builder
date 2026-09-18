@@ -5,6 +5,7 @@
 
 import type { BridgePointerEvent, PointerPhase } from "./normalizeInput";
 import type { BridgeViewModel } from "../viewModel";
+import { formatScaled } from "../format";
 
 export const BRIDGE_SCENE_KEY = "BridgeScene";
 
@@ -44,6 +45,7 @@ type RectLike = {
 type TextLike = {
   setText: (value: string) => TextLike;
   setPosition: (x: number, y: number) => TextLike;
+  setOrigin: (x: number, y: number) => TextLike;
   destroy: () => void;
 };
 
@@ -110,21 +112,28 @@ export class BridgeSceneController {
   attach(scene: SceneLike): void {
     this.scene = scene;
     scene.cameras.main.setBackgroundColor("#e8f1f8");
-    this.spanLabel = scene.add.text(16, 12, "", {
+    const centerX = scene.scale.width / 2;
+    this.spanLabel = scene.add.text(centerX, 12, "", {
       fontFamily: "system-ui, sans-serif",
-      fontSize: "14px",
-      color: "#1a2b3c",
-    });
-    this.remainingLabel = scene.add.text(16, 34, "", {
+      fontSize: "16px",
+      fontStyle: "bold",
+      color: "#102a43",
+      align: "center",
+    }).setOrigin(0.5, 0);
+    this.remainingLabel = scene.add.text(centerX, 39, "", {
       fontFamily: "system-ui, sans-serif",
-      fontSize: "13px",
-      color: "#334455",
-    });
-    this.feedbackLabel = scene.add.text(16, 56, "", {
+      fontSize: "15px",
+      fontStyle: "bold",
+      color: "#102a43",
+      align: "center",
+    }).setOrigin(0.5, 0);
+    this.feedbackLabel = scene.add.text(centerX, 64, "", {
       fontFamily: "system-ui, sans-serif",
-      fontSize: "13px",
-      color: "#334455",
-    });
+      fontSize: "15px",
+      fontStyle: "bold",
+      color: "#102a43",
+      align: "center",
+    }).setOrigin(0.5, 0);
 
     scene.input.on("pointermove", this.onPointerMove);
     scene.input.on("pointerup", this.onPointerUp);
@@ -149,25 +158,28 @@ export class BridgeSceneController {
     const gapX = cliff;
     const gapW = vm.span * unitPx;
 
-    this.spanLabel?.setText(`span ${vm.spanLabel} (${vm.span} units)`);
+    const centerX = scene.scale.width / 2;
+    this.spanLabel?.setPosition(centerX, 12).setText(`Target span: ${vm.spanLabel}`);
     this.remainingLabel?.setText(
       vm.exact
-        ? "exact fit"
+        ? "Exact fit"
         : vm.overfill
-          ? "overfill — see exact difference in the semantic companion"
-          : `remaining ${vm.remainingSpan} · filled ${vm.filledUnits}`
+          ? "Too long"
+          : `${formatScaled(vm.remainingSpan, vm.denominator)} units left · ${formatScaled(vm.filledUnits, vm.denominator)} filled`
     );
+    this.remainingLabel?.setPosition(centerX, 39);
     this.feedbackLabel?.setText(
       vm.exact
         ? vm.reducedMotion
-          ? "bridge complete · reduced motion"
+          ? "Bridge complete · reduced motion"
           : vm.crossing
-            ? "load marker crossing"
-            : "bridge complete"
+            ? "Crossing the bridge"
+            : "Bridge complete"
         : vm.incorrectSubmit
-          ? "check result shown below the canvas"
-          : "build to the exact span"
+          ? "Check the fit details below"
+          : "Build to match the target span"
     );
+    this.feedbackLabel?.setPosition(centerX, 64);
 
     // Gap bed
     this.gapRect?.destroy();
@@ -202,20 +214,29 @@ export class BridgeSceneController {
       this.placedRects.set(piece.id, rect);
       this.pieceLabels.set(
         piece.id,
-        scene.add.text(cursor + w / 2, gapY - 6, this.pieceFace(piece.units, piece.label), {
+        scene.add.text(cursor + w / 2, gapY, this.pieceFace(piece.units, piece.label, piece.kind), {
           fontFamily: "system-ui, sans-serif",
-          fontSize: "12px",
+          fontSize: "14px",
+          fontStyle: "bold",
           color: "#ffffff",
           align: "center",
-        }),
+        }).setOrigin(0.5, 0.5),
       );
       cursor += w;
     }
 
-    const trayY = Math.min(scene.scale.height - 48, gapY + 90);
-    let trayX = 24;
+    const trayStartY = Math.min(scene.scale.height - 84, gapY + 90);
+    const trayMargin = 24;
+    const trayRowHeight = 44;
+    const trayRight = scene.scale.width - trayMargin;
+    let trayX = trayMargin;
+    let trayY = trayStartY;
     for (const piece of vm.pieceTray) {
-      const w = Math.max(36, piece.widthPx * 0.85);
+      const w = Math.min(trayRight - trayMargin, Math.max(48, piece.widthPx * 0.85));
+      if (trayX > trayMargin && trayX + w > trayRight) {
+        trayX = trayMargin;
+        trayY += trayRowHeight;
+      }
       const color = piece.selected ? 0xf0a202 : 0x4caf7a;
       const rect = scene.add.rectangle(trayX + w / 2, trayY, w, 32, color, 1);
       rect.setData("pieceId", piece.id);
@@ -232,12 +253,13 @@ export class BridgeSceneController {
       this.trayRects.set(piece.id, rect);
       this.pieceLabels.set(
         piece.id,
-        scene.add.text(trayX + w / 2, trayY - 5, this.pieceFace(piece.units, piece.label), {
+        scene.add.text(trayX + w / 2, trayY, this.pieceFace(piece.units, piece.label, piece.kind), {
           fontFamily: "system-ui, sans-serif",
-          fontSize: "12px",
-          color: "#1a2b3c",
+          fontSize: "14px",
+          fontStyle: "bold",
+          color: "#102a43",
           align: "center",
-        }),
+        }).setOrigin(0.5, 0.5),
       );
       trayX += w + 12;
     }
@@ -279,11 +301,12 @@ export class BridgeSceneController {
     };
   }
 
-  private pieceFace(units: number, numeral: string): string {
-    if (this.viewModel?.flags.numberFace === "dots" && units > 0 && units <= 10) {
+  private pieceFace(units: number, label: string, kind: string): string {
+    if (this.viewModel?.flags.numberFace === "dots" && kind === "plank" && units > 0 && units <= 10) {
       return Array.from({ length: units }, () => "●").join(" ");
     }
-    return numeral;
+    if (kind === "beam-x" || kind === "beam-2x" || kind === "shim") return label;
+    return formatScaled(units, this.viewModel?.denominator ?? 1);
   }
 
   /** Hit-test helper for tests / adapter without real Phaser input. */
