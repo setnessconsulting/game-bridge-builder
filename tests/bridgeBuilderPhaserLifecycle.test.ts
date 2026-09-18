@@ -104,7 +104,7 @@ describe("GAME-131 Phaser lifecycle", () => {
       width: 640,
       height: 360,
       host: {
-        emitIntent: () => {},
+        emitPointerEvent: () => {},
         getInputGeneration: () => 1,
       },
       PhaserModule: mockPhaserModule(),
@@ -130,7 +130,7 @@ describe("GAME-131 Phaser lifecycle", () => {
 
   it("controller reconcile is presentation-only", () => {
     const controller = new BridgeSceneController({
-      emitIntent: () => {},
+      emitPointerEvent: () => {},
       getInputGeneration: () => 1,
     });
     const rects: Array<{ destroy: () => void }> = [];
@@ -209,7 +209,7 @@ describe("GAME-131 Phaser lifecycle", () => {
         {
           game: null,
           controller: new BridgeSceneController({
-            emitIntent: () => {},
+            emitPointerEvent: () => {},
             getInputGeneration: () => 1,
           }),
           destroy() {},
