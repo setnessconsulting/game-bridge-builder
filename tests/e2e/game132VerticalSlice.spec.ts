@@ -7,6 +7,10 @@ async function openSlice(page: Page, suffix = "") {
   await expect(
     page.locator('[data-testid="bridge-phaser-canvas-host"] canvas')
   ).toBeVisible();
+  await expect(page.getByTestId("bridge-phaser-host")).toHaveAttribute(
+    "data-ready",
+    "true"
+  );
 }
 
 async function activateWithKeyboard(page: Page, control: Locator) {
