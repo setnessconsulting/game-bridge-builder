@@ -21,6 +21,7 @@ interface Props {
 export default function BridgeCanvas(props: Props) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const portRef = useRef<PhaserBridgeRendererPort | null>(null);
+  const lastResizeRef = useRef<{ width: number; height: number } | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
 
@@ -43,15 +44,18 @@ export default function BridgeCanvas(props: Props) {
       propsRef.current.onStatusChange?.("failed");
     });
 
-    const observer = typeof ResizeObserver === "undefined"
-      ? null
-      : new ResizeObserver(([entry]) => {
-          if (!entry) return;
-          port.resize?.(
-            Math.max(320, Math.floor(entry.contentRect.width)),
-            Math.max(260, Math.floor(entry.contentRect.height)),
-          );
-        });
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(([entry]) => {
+            if (!entry) return;
+            const width = Math.max(320, Math.floor(entry.contentRect.width));
+            const height = Math.max(240, Math.round((width * 360) / 640));
+            const previous = lastResizeRef.current;
+            if (previous?.width === width && previous.height === height) return;
+            lastResizeRef.current = { width, height };
+            port.resize?.(width, height);
+          });
     observer?.observe(parent);
 
     return () => {
@@ -62,7 +66,6 @@ export default function BridgeCanvas(props: Props) {
     };
     // The port is mounted once per session generation. State updates flow through
     // applyViewModel below, while reset remounts the host with a new generation.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

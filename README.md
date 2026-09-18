@@ -19,6 +19,7 @@ repository while it is qualified; `games-site` hosts the approved versioned buil
 ## Validate
 
 ```text
+npm run lint
 npm run typecheck
 npm test
 npm run build
@@ -26,6 +27,10 @@ npm run test:e2e
 npm run release:build
 npm run release:check
 ```
+
+The GAME-132 Phaser qualification slice is available at `/?game132=1`. Add
+`&reduced=1` to exercise the reduced-motion completion path. The default root
+shows the final-contract candidate; neither path changes LevelBest.
 
 ## Repository boundaries
 

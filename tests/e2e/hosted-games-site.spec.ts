@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 const candidateVersion =
-  process.env.BRIDGE_BUILDER_PREVIEW_VERSION ?? "0.1.0-qualification.3";
+  process.env.BRIDGE_BUILDER_PREVIEW_VERSION ?? "0.1.0-qualification.4";
 
 test("loads the pinned Bridge Builder candidate through the hosted games-site frame", async ({
   page,

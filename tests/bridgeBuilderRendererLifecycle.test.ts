@@ -95,17 +95,39 @@ describe("GAME-294 renderer lifecycle", () => {
     expect(statuses).toEqual(["loading", "ready"]);
     expect(handle.reconcile).toHaveBeenCalledWith(viewModel);
     expect(host).toBeDefined();
-    host!.emitIntent({ type: "submit" });
+    const firstPieceId = viewModel.pieceTray[0].id;
+    const generation = viewModel.session.generation;
+    host!.emitPointerEvent({
+      phase: "down",
+      targetPieceId: firstPieceId,
+      overGap: false,
+      generation,
+    });
     expect(createIntent).toHaveBeenCalledWith(
-      { type: "submit" },
+      { type: "selectPiece", pieceId: firstPieceId },
       { sessionId: "session-v1", generation: 4 },
     );
     expect(listener).toHaveBeenCalledWith(
-      createBridgeIntent({ type: "submit" }, { sessionId: "session-v1", generation: 4 }, 1),
+      createBridgeIntent(
+        { type: "selectPiece", pieceId: firstPieceId },
+        { sessionId: "session-v1", generation: 4 },
+        1,
+      ),
     );
 
     unsubscribe();
-    host!.emitIntent({ type: "submit" });
+    host!.emitPointerEvent({
+      phase: "move",
+      targetPieceId: null,
+      overGap: false,
+      generation,
+    });
+    host!.emitPointerEvent({
+      phase: "up",
+      targetPieceId: null,
+      overGap: true,
+      generation,
+    });
     expect(listener).toHaveBeenCalledTimes(1);
 
     const updated = {
@@ -140,7 +162,7 @@ describe("GAME-294 renderer lifecycle", () => {
     const pendingGame = new Promise<BridgeGameHandle>((resolve) => {
       resolveGame = resolve;
     });
-    createBridgeGameMock.mockImplementation((options: CreateBridgeGameOptions) => {
+    createBridgeGameMock.mockImplementation(() => {
       markCalled();
       return pendingGame;
     });

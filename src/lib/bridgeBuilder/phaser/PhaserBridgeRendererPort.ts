@@ -1,9 +1,14 @@
-import type { BridgeIntent } from "../intents";
-import { parseBridgeIntentAction } from "../intents";
+import type { BridgeIntent, BridgeIntentContext } from "../intents";
 import type { BridgeRendererPort, BridgeRendererPortOptions } from "../rendererPort";
 import { isBridgeViewModelCompatible } from "../rendererPort";
 import type { BridgeViewModel } from "../viewModel";
 import { createBridgeLayout } from "../layout";
+import {
+  createInputNormalizerState,
+  normalizePointerEvent,
+  type BridgePointerEvent,
+  type InputNormalizerState,
+} from "./normalizeInput";
 import type { BridgeGameHandle } from "./createBridgeGame";
 
 const PHASER_RENDERER_VERSION = "1.1.0";
@@ -40,6 +45,7 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
   private reducedMotion = false;
   private muted = false;
   private lastRenderedSignature: string | null = null;
+  private inputState: InputNormalizerState | null = null;
 
   async mount(
     container: HTMLElement,
@@ -48,6 +54,10 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
   ): Promise<void> {
     this.options = options;
     this.viewModel = initial;
+    this.inputState = createInputNormalizerState(
+      initial.selectedPieceId ?? null,
+      initial.session.generation,
+    );
     this.disposed = false;
     options.onStatusChange?.("loading");
     if (!isBridgeViewModelCompatible(initial.version, PHASER_RENDERER_VERSION)) {
@@ -64,20 +74,7 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
         width: layout.canvasWidth,
         height: layout.canvasHeight,
         host: {
-          emitIntent: (raw) => {
-            const action = parseBridgeIntentAction(raw);
-            const current = this.viewModel;
-            const activeOptions = this.options;
-            if (!action || !current || !activeOptions) {
-              activeOptions?.onInvalidIntent?.("invalid-shape");
-              return;
-            }
-            const intent = activeOptions.createIntent(action, {
-              sessionId: current.session.sessionId,
-              generation: current.session.generation,
-            });
-            for (const listener of this.listeners) listener(intent);
-          },
+          emitPointerEvent: (event) => this.handlePointerEvent(event),
           getInputGeneration: () => this.viewModel?.session.generation ?? -1,
         },
       });
@@ -122,6 +119,12 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
       this.options?.onStatusChange?.("failed");
       this.dispose();
       return;
+    }
+    if (this.inputState?.inputGeneration !== next.session.generation) {
+      this.inputState = createInputNormalizerState(
+        next.selectedPieceId ?? null,
+        next.session.generation,
+      );
     }
     this.viewModel = next;
     this.reducedMotion = next.flags.reducedMotion;
@@ -174,6 +177,22 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
     this.game.reconcile(this.viewModel);
   }
 
+  private handlePointerEvent(event: BridgePointerEvent): void {
+    const current = this.viewModel;
+    const activeOptions = this.options;
+    if (!current || !activeOptions || !this.inputState) return;
+    const result = normalizePointerEvent(this.inputState, event);
+    this.inputState = result.state;
+    const context: BridgeIntentContext = {
+      sessionId: current.session.sessionId,
+      generation: current.session.generation,
+    };
+    for (const action of result.intents) {
+      const intent: BridgeIntent = activeOptions.createIntent(action, context);
+      for (const listener of this.listeners) listener(intent);
+    }
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -181,6 +200,7 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
     this.game = null;
     this.viewModel = null;
     this.lastRenderedSignature = null;
+    this.inputState = null;
     this.options = null;
     this.listeners.clear();
   }

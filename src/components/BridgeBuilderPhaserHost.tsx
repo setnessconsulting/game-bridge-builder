@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Client-only Phaser host for Bridge Builder harness.
- * Production /games Bridge Builder remains the React renderer.
+ * GAME-132 representative Phaser vertical slice.
+ * The TypeScript session reducer is the only mathematical/game authority.
  */
 
 import {
@@ -11,6 +11,8 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   applyBridgeIntent,
@@ -19,17 +21,22 @@ import {
 } from "@/lib/bridgeBuilder/session";
 import type { BridgeIntentAction } from "@/lib/bridgeBuilder/intents";
 import { createBridgeLayout, withResize } from "@/lib/bridgeBuilder/layout";
+import { deriveBridgeSemanticState } from "@/lib/bridgeBuilder/semantic";
 import { deriveBridgeViewModel } from "@/lib/bridgeBuilder/viewModel";
 import type { BridgePuzzle } from "@/lib/bridgeBuilder/types";
 import {
   bumpInputGeneration,
   createInputNormalizerState,
+  normalizeDirectInput,
+  normalizePointerEvent,
+  type BridgeDirectInputSource,
   type InputNormalizerState,
+  type NormalizeResult,
 } from "@/lib/bridgeBuilder/phaser/normalizeInput";
 import type { BridgeGameHandle } from "@/lib/bridgeBuilder/phaser/createBridgeGame";
 
 const DEMO_PUZZLE: BridgePuzzle = {
-  id: "phaser-harness#1",
+  id: "game-132-vertical-slice#1",
   skillId: "bb-compose-10",
   band: "g12",
   denominator: 1,
@@ -55,6 +62,12 @@ export interface BridgeBuilderPhaserHostProps {
   reducedMotion?: boolean;
 }
 
+function activationSource(
+  event: ReactMouseEvent<HTMLButtonElement>
+): BridgeDirectInputSource {
+  return event.detail === 0 ? "keyboard" : "tap";
+}
+
 export default function BridgeBuilderPhaserHost({
   puzzle = DEMO_PUZZLE,
   reducedMotion = false,
@@ -62,6 +75,7 @@ export default function BridgeBuilderPhaserHost({
   const parentRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<BridgeGameHandle | null>(null);
   const inputRef = useRef<InputNormalizerState>(createInputNormalizerState());
+  const crossingGenerationRef = useRef<number | null>(null);
   const [session, setSession] = useState<BridgeSessionState>(() =>
     createBridgeSession(puzzle)
   );
@@ -69,7 +83,9 @@ export default function BridgeBuilderPhaserHost({
     createBridgeLayout({ canvasWidth: 640, canvasHeight: 360 })
   );
   const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null);
+  const [crossing, setCrossing] = useState(false);
   const [ready, setReady] = useState(false);
+  const [interactionGeometry, setInteractionGeometry] = useState("{}");
 
   const viewModel = useMemo(
     () =>
@@ -77,12 +93,62 @@ export default function BridgeBuilderPhaserHost({
         layout,
         reducedMotion,
         draggingPieceId,
+        crossing,
       }),
-    [session, layout, reducedMotion, draggingPieceId]
+    [session, layout, reducedMotion, draggingPieceId, crossing]
+  );
+  const semantic = useMemo(
+    () => deriveBridgeSemanticState(session, viewModel),
+    [session, viewModel]
   );
 
   function dispatch(intent: BridgeIntentAction) {
     setSession((prev) => applyBridgeIntent(prev, intent).state);
+  }
+
+  function applyNormalized(result: NormalizeResult) {
+    inputRef.current = result.state;
+    setDraggingPieceId(result.state.draggingPieceId);
+    for (const intent of result.intents) dispatch(intent);
+  }
+
+  function handleDirect(source: BridgeDirectInputSource, intent: BridgeIntentAction) {
+    applyNormalized(
+      normalizeDirectInput(inputRef.current, {
+        source,
+        intent,
+      })
+    );
+  }
+
+  function handleCanvasPointer(
+    phase: "down" | "move" | "up" | "cancel",
+    event:
+      | ReactPointerEvent<HTMLDivElement>
+      | ReactMouseEvent<HTMLDivElement>
+  ) {
+    const canvas = parentRef.current?.querySelector("canvas");
+    const controller = gameRef.current?.controller;
+    if (!canvas || !controller) return;
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+    const hit = controller.pieceAt(x, y);
+
+    if (phase === "down" || inputRef.current.draggingPieceId) {
+      event.preventDefault();
+    }
+
+    applyNormalized(
+      normalizePointerEvent(inputRef.current, {
+        phase,
+        targetPieceId: hit?.role === "tray" ? hit.pieceId : null,
+        overGap: controller.isOverGap(x, y),
+        generation: inputRef.current.inputGeneration,
+      })
+    );
   }
 
   useEffect(() => {
@@ -99,20 +165,18 @@ export default function BridgeBuilderPhaserHost({
         width: layout.canvasWidth,
         height: layout.canvasHeight,
         host: {
-          emitIntent: (raw) => {
-            if (raw.type === "selectPiece" && raw.pieceId) {
-              dispatch({ type: "selectPiece", pieceId: raw.pieceId });
-            } else if (raw.type === "placePiece" && raw.pieceId) {
-              dispatch({ type: "placePiece", pieceId: raw.pieceId });
-            } else if (raw.type === "removePiece" && raw.pieceId) {
-              dispatch({ type: "removePiece", pieceId: raw.pieceId });
-            } else if (raw.type === "reset") {
-              dispatch({ type: "reset" });
-            } else if (raw.type === "submit") {
-              dispatch({ type: "submit" });
-            }
+          emitPointerEvent: (event) => {
+            applyNormalized(normalizePointerEvent(inputRef.current, event));
           },
           getInputGeneration: () => inputRef.current.inputGeneration,
+          onSceneReady: () => {
+            if (cancelled) return;
+            setReady(true);
+            window.requestAnimationFrame(() => {
+              const geometry = gameRef.current?.controller.getInteractionGeometry();
+              if (geometry) setInteractionGeometry(JSON.stringify(geometry));
+            });
+          },
         },
       });
       if (cancelled) {
@@ -121,24 +185,49 @@ export default function BridgeBuilderPhaserHost({
       }
       gameRef.current = handle;
       handle.reconcile(viewModel);
-      setReady(true);
     })();
 
     return () => {
       cancelled = true;
       inputRef.current = bumpInputGeneration(inputRef.current);
       setDraggingPieceId(null);
+      setCrossing(false);
       gameRef.current?.destroy();
       gameRef.current = null;
       setReady(false);
     };
-    // Mount once per puzzle session; reconcile happens in a separate effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Mount once per puzzle session; reconciliation happens below.
   }, [puzzle.id]);
 
   useEffect(() => {
     gameRef.current?.reconcile(viewModel);
-  }, [viewModel]);
+    if (ready) {
+      window.requestAnimationFrame(() => {
+        const geometry = gameRef.current?.controller.getInteractionGeometry();
+        if (geometry) setInteractionGeometry(JSON.stringify(geometry));
+      });
+    }
+  }, [viewModel, ready]);
+
+  useEffect(() => {
+    if (session.phase !== "exact") return;
+
+    if (reducedMotion) {
+      setCrossing(false);
+      dispatch({ type: "presentationComplete" });
+      return;
+    }
+
+    const generation = session.presentationGeneration;
+    if (crossingGenerationRef.current === generation) return;
+    crossingGenerationRef.current = generation;
+    setCrossing(true);
+    const timer = window.setTimeout(() => {
+      setCrossing(false);
+      dispatch({ type: "presentationComplete" });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [session.phase, session.presentationGeneration, reducedMotion]);
 
   useEffect(() => {
     const onVis = () => {
@@ -161,10 +250,22 @@ export default function BridgeBuilderPhaserHost({
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry || cancelled) return;
+      // Size from the host box only. Deriving height from width (16:9) prevents a
+      // Phaser canvas ↔ ResizeObserver feedback loop that otherwise drifts tray/gap
+      // hit targets while a gesture is in flight.
       const width = Math.max(320, Math.floor(entry.contentRect.width));
-      const height = Math.max(240, Math.floor(entry.contentRect.height));
+      const height = Math.max(240, Math.round((width * 360) / 640));
       const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-      setLayout((prev) => withResize(prev, { width, height, dpr }));
+      setLayout((prev) => {
+        if (
+          prev.canvasWidth === width &&
+          prev.canvasHeight === height &&
+          prev.dpr === dpr
+        ) {
+          return prev;
+        }
+        return withResize(prev, { width, height, dpr });
+      });
       void import("@/lib/bridgeBuilder/phaser/createBridgeGame").then(
         ({ resizeBridgeGame }) => {
           if (!cancelled && gameRef.current) {
@@ -180,10 +281,6 @@ export default function BridgeBuilderPhaserHost({
     };
   }, []);
 
-  const available = session.tray.filter(
-    (p) => !session.placed.some((pl) => pl.id === p.id)
-  );
-
   const shellStyle: CSSProperties = {
     display: "grid",
     gap: 12,
@@ -191,88 +288,160 @@ export default function BridgeBuilderPhaserHost({
   };
 
   return (
-    <div style={shellStyle} data-testid="bridge-phaser-host">
+    <div
+      style={shellStyle}
+      data-testid="bridge-phaser-host"
+      data-responsive={viewModel.responsive}
+      data-reduced-motion={String(reducedMotion)}
+      data-ready={String(ready)}
+      data-input-geometry={interactionGeometry}
+    >
       <div
         ref={parentRef}
         data-testid="bridge-phaser-canvas-host"
         style={{
           width: "100%",
-          minHeight: 360,
+          aspectRatio: "16 / 9",
+          minHeight: 240,
           borderRadius: 12,
           overflow: "hidden",
           background: "#e8f1f8",
           border: "1px solid #c5d5e2",
         }}
         aria-hidden="true"
+        onPointerDownCapture={(event) => handleCanvasPointer("down", event)}
+        onPointerMoveCapture={(event) => handleCanvasPointer("move", event)}
+        onPointerUpCapture={(event) => handleCanvasPointer("up", event)}
+        onPointerCancelCapture={(event) => handleCanvasPointer("cancel", event)}
+        onMouseDownCapture={(event) => handleCanvasPointer("down", event)}
+        onMouseMoveCapture={(event) => handleCanvasPointer("move", event)}
+        onMouseUpCapture={(event) => handleCanvasPointer("up", event)}
       />
 
-      {/* Semantic DOM sibling for a11y — same intents as Phaser. */}
-      <div
+      <section
         role="region"
-        aria-label="Bridge Builder controls"
+        aria-label="Bridge Builder controls and status"
         data-testid="bridge-phaser-a11y"
       >
-        <p>
-          Span {viewModel.spanLabel} ({viewModel.span} units). Remaining{" "}
-          {viewModel.remainingSpan}. Filled {viewModel.filledUnits}.
-          {viewModel.exact ? " Exact fit." : ""}
+        <h2 tabIndex={-1}>Build exactly to {viewModel.spanLabel}</h2>
+        <dl>
+          <dt>Target span</dt>
+          <dd data-testid="bridge-target">{semantic.target}</dd>
+          <dt>Selected piece</dt>
+          <dd data-testid="bridge-selected-piece">{semantic.selectedPiece}</dd>
+          <dt>Current bridge composition</dt>
+          <dd data-testid="bridge-composition">{semantic.composition}</dd>
+          <dt>Difference</dt>
+          <dd data-testid="bridge-difference">{semantic.difference}</dd>
+          <dt>Verdict</dt>
+          <dd data-testid="bridge-verdict">{semantic.verdict}</dd>
+          <dt>Presentation</dt>
+          <dd data-testid="bridge-responsive-state">
+            {viewModel.responsive}; DPR {viewModel.layout.dpr}; reduced motion{" "}
+            {reducedMotion ? "on" : "off"}
+          </dd>
+        </dl>
+
+        <p aria-live="polite" data-testid="bridge-feedback">
+          {semantic.feedback}
           {ready ? "" : " Canvas loading…"}
         </p>
+
         <div role="group" aria-label="Piece tray">
-          {available.map((piece) => (
+          {viewModel.pieceTray.map((piece) => (
             <button
               key={piece.id}
               type="button"
               aria-pressed={session.selectedPieceId === piece.id}
-              onClick={() => {
-                inputRef.current = {
-                  ...inputRef.current,
-                  selectedPieceId: piece.id,
-                  draggingPieceId: null,
-                  dragStarted: false,
-                };
-                setDraggingPieceId(null);
-                dispatch({ type: "selectPiece", pieceId: piece.id });
-              }}
+              onClick={(event) =>
+                handleDirect(activationSource(event), {
+                  type: "selectPiece",
+                  pieceId: piece.id,
+                })
+              }
             >
-              {piece.label} ({piece.units})
+              {piece.label} ({piece.units} units)
             </button>
           ))}
         </div>
+
         <div role="group" aria-label="Placed pieces">
           {session.placed.map((piece) => (
             <button
               key={piece.id}
               type="button"
-              onClick={() => dispatch({ type: "removePiece", pieceId: piece.id })}
+              onClick={(event) =>
+                handleDirect(activationSource(event), {
+                  type: "removePiece",
+                  pieceId: piece.id,
+                })
+              }
             >
               Remove {piece.label}
             </button>
           ))}
         </div>
+
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
             type="button"
-            onClick={() => {
+            onClick={(event) => {
               if (session.selectedPieceId) {
-                dispatch({ type: "placePiece", pieceId: session.selectedPieceId });
+                handleDirect(activationSource(event), {
+                  type: "placePiece",
+                  pieceId: session.selectedPieceId,
+                });
               }
             }}
-            disabled={!session.selectedPieceId}
+            disabled={!session.selectedPieceId || viewModel.exact}
           >
             Place selected
           </button>
-          <button type="button" onClick={() => dispatch({ type: "reset" })}>
+          {session.phase === "incorrectSubmit" ? (
+            <button
+              type="button"
+              onClick={(event) =>
+                handleDirect(activationSource(event), { type: "continue" })
+              }
+            >
+              Keep building
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={(event) =>
+              handleDirect(activationSource(event), { type: "reset" })
+            }
+            disabled={viewModel.exact}
+          >
             Reset
           </button>
-          <button type="button" onClick={() => dispatch({ type: "submit" })}>
-            Submit
+          <button
+            type="button"
+            onClick={(event) =>
+              handleDirect(activationSource(event), { type: "submit" })
+            }
+            disabled={viewModel.exact}
+          >
+            Check it
           </button>
         </div>
-        <p aria-live="polite">
-          Selected: {session.selectedPieceId ?? "none"}. Phase: {session.phase}.
+
+        <p data-testid="bridge-actions">
+          Available actions:{" "}
+          {semantic.availableActions.length > 0
+            ? semantic.availableActions.join(", ")
+            : "bridge complete"}
+          .
         </p>
-      </div>
+        <p aria-live="polite" data-testid="bridge-completion">
+          {semantic.completion === "crossing"
+            ? "Crossing the completed bridge."
+            : semantic.completion === "complete"
+              ? "Complete. The bridge is ready."
+              : "Bridge not complete yet."}
+        </p>
+      </section>
     </div>
   );
 }

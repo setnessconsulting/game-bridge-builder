@@ -104,7 +104,7 @@ describe("GAME-131 Phaser lifecycle", () => {
       width: 640,
       height: 360,
       host: {
-        emitIntent: () => {},
+        emitPointerEvent: () => {},
         getInputGeneration: () => 1,
       },
       PhaserModule: mockPhaserModule(),
@@ -130,7 +130,7 @@ describe("GAME-131 Phaser lifecycle", () => {
 
   it("controller reconcile is presentation-only", () => {
     const controller = new BridgeSceneController({
-      emitIntent: () => {},
+      emitPointerEvent: () => {},
       getInputGeneration: () => 1,
     });
     const rects: Array<{ destroy: () => void }> = [];
@@ -185,13 +185,18 @@ describe("GAME-131 Phaser lifecycle", () => {
       cameras: { main: { setBackgroundColor() {} } },
       scale: { width: 640, height: 360 },
     };
-    controller.attach(scene as never);
     let state = createBridgeSession(puzzle);
     state = applyBridgeIntent(state, { type: "placePiece", pieceId: "a" }).state;
     const vm = deriveBridgeViewModel(state, {
       layout: createBridgeLayout({ unitPx: 24 }),
     });
+
+    // Match the real host timing: React can reconcile before Phaser invokes
+    // Scene.create(). The controller must retain and replay that first model.
     controller.reconcile(vm);
+    expect(rects).toHaveLength(0);
+    controller.attach(scene as never);
+    expect(rects.length).toBeGreaterThan(0);
     expect(vm.filledUnits).toBe(4);
     controller.destroy();
   });
@@ -210,7 +215,7 @@ describe("GAME-131 Phaser lifecycle", () => {
           game: null,
           ready: Promise.resolve(),
           controller: new BridgeSceneController({
-            emitIntent: () => {},
+            emitPointerEvent: () => {},
             getInputGeneration: () => 1,
           }),
           destroy() {},

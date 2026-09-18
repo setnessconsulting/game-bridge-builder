@@ -44,7 +44,7 @@ export interface PhaserModuleLike {
       resize: (width: number, height: number) => void;
     };
   };
-  Scene: new (config?: string | Record<string, unknown>) => unknown;
+  Scene: new (config?: string | Record<string, unknown>) => object;
 }
 
 /**

@@ -1,20 +1,27 @@
 /**
- * Normalize pointer/drag/tap events into bounded Bridge intents.
- * Uses a monotonic inputGeneration so stale remount/tween callbacks cannot double-place.
+ * Normalize pointer/drag/tap/keyboard input into bounded Bridge intents.
+ * Presentation input may choose an intent, but only the engine may decide
+ * whether the intent is legal or mathematically correct.
  */
 
 import type { BridgeIntentAction } from "../intents";
 
 export type PointerPhase = "down" | "move" | "up" | "cancel";
+export type BridgeDirectInputSource = "tap" | "keyboard";
 
 export interface BridgePointerEvent {
   phase: PointerPhase;
-  /** Stable piece id under the pointer, if any. */
+  /** Stable tray piece id under the pointer, if any. */
   targetPieceId: string | null;
   /** True when the pointer is over the gap/span hit target. */
   overGap: boolean;
   /** Host generation token captured when the gesture began. */
   generation: number;
+}
+
+export interface BridgeDirectInput {
+  source: BridgeDirectInputSource;
+  intent: BridgeIntentAction;
 }
 
 export interface InputNormalizerState {
@@ -45,9 +52,47 @@ export function bumpInputGeneration(state: InputNormalizerState): InputNormalize
   return {
     ...state,
     inputGeneration: state.inputGeneration + 1,
+    selectedPieceId: null,
     draggingPieceId: null,
     dragStarted: false,
   };
+}
+
+/**
+ * Tap/click and keyboard controls both pass through this direct normalizer.
+ * The source is retained for tests/diagnostics only; the resulting engine
+ * intent is deliberately identical for equivalent actions.
+ */
+export function normalizeDirectInput(
+  state: InputNormalizerState,
+  input: BridgeDirectInput
+): NormalizeResult {
+  void input.source;
+  const intent = input.intent;
+  let next = {
+    ...state,
+    draggingPieceId: null,
+    dragStarted: false,
+  };
+
+  switch (intent.type) {
+    case "selectPiece":
+      next = { ...next, selectedPieceId: intent.pieceId };
+      break;
+    case "placePiece":
+    case "reset":
+      next = { ...next, selectedPieceId: null };
+      break;
+    case "removePiece":
+      if (next.selectedPieceId === intent.pieceId) {
+        next = { ...next, selectedPieceId: null };
+      }
+      break;
+    default:
+      break;
+  }
+
+  return { state: next, intents: [intent] };
 }
 
 /**
@@ -107,7 +152,7 @@ export function normalizePointerEvent(
     // Tap-place: selected piece + tap on gap (no active drag).
     if (event.overGap && state.selectedPieceId) {
       return {
-        state,
+        state: { ...state, selectedPieceId: null },
         intents: [{ type: "placePiece", pieceId: state.selectedPieceId }],
       };
     }
@@ -118,6 +163,7 @@ export function normalizePointerEvent(
   const wasDrag = state.dragStarted;
   const next: InputNormalizerState = {
     ...state,
+    selectedPieceId: event.overGap ? null : state.selectedPieceId,
     draggingPieceId: null,
     dragStarted: false,
   };
