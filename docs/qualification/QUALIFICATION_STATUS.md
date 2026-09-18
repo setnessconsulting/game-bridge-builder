@@ -4,9 +4,11 @@
 
 **Candidate status:** `candidate-not-approved`
 
-**Current candidate:** `0.1.0-qualification.2` — locally built; not yet published to R2
+**Current candidate:** `0.1.0-qualification.2` — published to private R2 and hosted for qualification only
 
-**Source commit:** pending Wave 1 commit
+**Candidate source commit:** `e5c4f358c22224a312db2d63b4452cb096412531`
+
+**CI evidence:** [GitHub Actions run 35291848423](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35291848423)
 
 **Owner decisions:** O-1 through O-8 were approved as policy decisions on 2026-09-17. `GAME-294` / `GAME-295` now track the sanctioned follow-ups in Backlog; neither is completed. O-7 executors and dates remain open.
 
@@ -17,20 +19,20 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
 - TypeScript typecheck passes.
 - 123 Vitest tests pass across 14 files.
 - Production Vite build and `release:check` pass for `0.1.0-qualification.2`; the Phaser bundle is approximately 1.38 MB, so performance-budget ratification and real-device measurements remain open.
-- Ten local Playwright tests pass in Chromium with `--use-gl=swiftshader`, including a real Phaser canvas plus DOM mirror, exact/underfill/overfill journeys, retry/undo, timer tamper checks, keyboard, drag, reduced motion, mute, touch sizing, and automated accessibility checks. The hosted-games-site test is skipped until the `.2` candidate is deployed.
-- The locally generated manifest remains `candidate-not-approved`; it does not assert CI or human approval. The candidate still needs a commit-backed release artifact and hosted verification.
+- Ten local Playwright tests pass in Chromium with `--use-gl=swiftshader`, including a real Phaser canvas plus DOM mirror, exact/underfill/overfill journeys, retry/undo, timer tamper checks, keyboard, drag, reduced motion, mute, touch sizing, and automated accessibility checks.
+- The CI-backed release manifest records all four checks as executed before manifest creation and remains `candidate-not-approved`; named human approvals remain pending.
 
 ## Hosting and promotion boundary
 
-- No hosted qualification has yet been completed for candidate `.2`. The existing Cloudflare preview is from the earlier qualification branch/version and is not evidence for this candidate.
-- The clean games-site preview branch pins `.2`; its change is separate from the preserved, dirty games-site checkout. Production `main` and LevelBest have not been changed by this wave.
-- The production games-site catalog must remain `coming-soon` until the full approval gate passes. A preview `playable` pointer is only for qualification and does not constitute approval.
+- Hosted preview: [Bridge Builder play route](https://d9839350.games-site-7pn.pages.dev/bridge-builder/play/) from branch `codex/bridge-builder-wave1-preview`, source `56b5d28`.
+- The hosted Chromium/SwiftShader journey passes against the actual `.2` iframe: the frame pins the exact version, creates a real Phaser canvas after Start, shows the DOM mirror, completes an exact-fit round, and reads the candidate manifest. The entry returns `200` with immutable cache metadata.
+- The manifest's hosted-preview field was pending when the immutable artifact was created; the post-upload hosted test result is recorded here, not written back into the versioned manifest.
+- Production [Bridge Builder page](https://games.setnessconsulting.com/bridge-builder/) still returns `Coming soon` with no `.2` pointer. The clean preview branch is separate from the preserved, dirty games-site checkout; production `main` and LevelBest have not been changed.
+- A preview `playable` pointer is only for qualification and does not constitute approval. The release manifest remains `candidate-not-approved`.
 
 ## Still required before promotion
 
-- Commit-backed release manifest and real R2 delivery of every hashed file, followed by the hosted same-origin frame journey and immutable-cache checks.
-- Green hosted CI for typecheck, unit/property/golden tests, production build, and the real Phaser Chromium SwiftShader lane.
-- Full fake-clock hidden-tab, pause-budget, expiry, tamper, stale-input, version-skew, failover, session-containment, and teardown coverage across the final contract.
+- Full fake-clock hidden-tab/pause-budget, expiry/tamper, stale-input, version-skew, failover, session-containment, and teardown qualification across the final contract; the current slice does not close those full evidence gates.
 - Full curriculum catalogue and supply-floor qualification owned by `GAME-295`; additive renderer-contract acceptance owned by `GAME-294`.
 - Real-device, phone/tablet/desktop/DPR/200%-zoom, touch-target, and child/device results.
 - Named and dated manual accessibility review for each applicable WCAG 2.2 AA success criterion; no blanket accessibility claim. The Relaxed path remains an untimed candidate until alternate-version checks are recorded.

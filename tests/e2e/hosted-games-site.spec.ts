@@ -15,12 +15,12 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
   );
   const frame = page.frameLocator('iframe[title="Bridge Builder game"]');
   await expect(frame.getByTestId("bridge-builder-candidate")).toBeVisible();
+  await frame.getByTestId("bridge-start").click();
   await expect(frame.locator("canvas")).toHaveCount(1);
   await expect(frame.getByTestId("renderer-status")).toHaveText("Canvas ready");
   await expect(frame.getByTestId("bridge-dom-mirror")).toBeVisible();
 
   // Exercise the actual candidate inside the hosted frame, not only the shell.
-  await frame.getByTestId("bridge-start").click();
   await frame.getByTestId("piece-plank-4").click();
   await frame.getByTestId("bridge-open-slot").click();
   await frame.getByTestId("piece-plank-6").click();
