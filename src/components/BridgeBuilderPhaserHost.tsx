@@ -296,18 +296,13 @@ export default function BridgeBuilderPhaserHost({
           border: "1px solid #c5d5e2",
         }}
         aria-hidden="true"
-        onPointerDown={(event) => handleCanvasPointer("down", event)}
-        onPointerMove={(event) => handleCanvasPointer("move", event)}
-        onPointerUp={(event) => handleCanvasPointer("up", event)}
-        onPointerCancel={(event) => handleCanvasPointer("cancel", event)}
-        onMouseDown={(event) => handleCanvasPointer("down", event)}
-        onMouseMove={(event) => handleCanvasPointer("move", event)}
-        onMouseUp={(event) => handleCanvasPointer("up", event)}
-        onMouseLeave={(event) => {
-          if (inputRef.current.draggingPieceId) {
-            handleCanvasPointer("cancel", event);
-          }
-        }}
+        onPointerDownCapture={(event) => handleCanvasPointer("down", event)}
+        onPointerMoveCapture={(event) => handleCanvasPointer("move", event)}
+        onPointerUpCapture={(event) => handleCanvasPointer("up", event)}
+        onPointerCancelCapture={(event) => handleCanvasPointer("cancel", event)}
+        onMouseDownCapture={(event) => handleCanvasPointer("down", event)}
+        onMouseMoveCapture={(event) => handleCanvasPointer("move", event)}
+        onMouseUpCapture={(event) => handleCanvasPointer("up", event)}
       />
 
       <section
