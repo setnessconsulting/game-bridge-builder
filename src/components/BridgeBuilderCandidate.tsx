@@ -24,7 +24,9 @@ import {
   createBridgeSession,
   type BridgeSessionState,
 } from "@/lib/bridgeBuilder/session";
-import type { Piece } from "@/lib/bridgeBuilder/types";
+import { formatScaled } from "@/lib/bridgeBuilder/format";
+import { createQualificationRound } from "@/lib/bridgeBuilder/qualificationRound";
+import type { BridgePuzzle, Piece } from "@/lib/bridgeBuilder/types";
 import { deriveBridgeViewModel, type BridgeNumberFace } from "@/lib/bridgeBuilder/viewModel";
 import BridgeCanvas from "./BridgeCanvas";
 
@@ -63,6 +65,20 @@ function pieceLabel(piece: { units: number; label: string }): string {
   return `${piece.units} unit${Math.abs(piece.units) === 1 ? "" : "s"} plank`;
 }
 
+function targetSpanLabel(puzzle: BridgePuzzle): string {
+  const value = formatScaled(puzzle.gapUnits, puzzle.denominator);
+  const unit = Math.abs(puzzle.gapUnits) === puzzle.denominator ? "unit" : "units";
+  return `${value} ${unit}`;
+}
+
+function questionText(puzzle: BridgePuzzle, bridgeNumber: number): string {
+  const target = `${formatScaled(puzzle.gapUnits, puzzle.denominator)}-unit span`;
+  const instruction = puzzle.presetPlaced.length > 0
+    ? `Finish the ${target} by filling the missing amount.`
+    : `Build the ${target} using the planks.`;
+  return `Bridge ${bridgeNumber}: ${instruction}`;
+}
+
 function PieceFace({
   units,
   label,
@@ -85,8 +101,12 @@ function PieceFace({
 }
 
 export default function BridgeBuilderCandidate() {
+  const roundSeedRef = useRef(20_260_919);
+  const [roundPuzzles, setRoundPuzzles] = useState(() =>
+    createQualificationRound(20_260_918, { firstPuzzle: CANDIDATE_PUZZLE }),
+  );
   const [session, setSession] = useState<BridgeSessionState>(() =>
-    createBridgeSession(CANDIDATE_PUZZLE),
+    createBridgeSession(roundPuzzles[0] ?? CANDIDATE_PUZZLE),
   );
   const [clock, setClock] = useState<BridgeClockState>(() =>
     createBridgeClock({ nowMs: performance.now() }),
@@ -100,6 +120,7 @@ export default function BridgeBuilderCandidate() {
   const lastAcceptedSequenceRef = useRef(0);
   const telemetryRef = useRef(createSessionSink("free", () => performance.now()));
   const retryNoticeTimerRef = useRef<number | null>(null);
+  const presentationDispatchRef = useRef<() => void>(() => {});
   const [hasStarted, setHasStarted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -111,6 +132,11 @@ export default function BridgeBuilderCandidate() {
 
   const layout = useMemo(() => createBridgeLayout({ canvasWidth: 640, canvasHeight: 360 }), []);
   const expired = clock.expired || clock.remainingMs === 0;
+  const currentPuzzleIndex = Math.max(
+    0,
+    roundPuzzles.findIndex((puzzle) => puzzle.id === session.puzzle.id),
+  );
+  const roundComplete = expired || session.bridgesSolved >= clock.capBridges;
   const viewModel = useMemo(
     () =>
       deriveBridgeViewModel(session, {
@@ -134,7 +160,7 @@ export default function BridgeBuilderCandidate() {
   );
   const availablePieces = viewModel.pieceTray;
   const selectedPiece = session.selectedPieceId
-    ? CANDIDATE_PUZZLE.tray.find((piece) => piece.id === session.selectedPieceId)
+    ? session.puzzle.tray.find((piece) => piece.id === session.selectedPieceId)
     : undefined;
 
   useEffect(() => {
@@ -167,6 +193,52 @@ export default function BridgeBuilderCandidate() {
   useEffect(() => {
     setClock((previous) => expireBridgeClockAtCap(previous, session.bridgesSolved));
   }, [session.bridgesSolved]);
+
+  useEffect(() => {
+    if (
+      session.phase !== "exact" ||
+      expired ||
+      session.bridgesSolved >= clock.capBridges
+    ) {
+      return;
+    }
+    if (reducedMotion) {
+      presentationDispatchRef.current();
+      return;
+    }
+    const timer = window.setTimeout(() => presentationDispatchRef.current(), 600);
+    return () => window.clearTimeout(timer);
+  }, [clock.capBridges, expired, reducedMotion, session.bridgesSolved, session.phase, session.presentationGeneration]);
+
+  useEffect(() => {
+    if (session.phase !== "awaitingContinue" || expired || session.bridgesSolved >= clock.capBridges) return;
+
+    const nextPuzzleIndex = session.bridgesSolved;
+    const nextPuzzle = roundPuzzles[nextPuzzleIndex];
+    if (!nextPuzzle) return;
+
+    const nextContext = {
+      ...intentContextRef.current,
+      generation: intentContextRef.current.generation + 1,
+    };
+    intentContextRef.current = nextContext;
+    setIntentContext(nextContext);
+    setRendererStatus("loading");
+    clearIntentIssue();
+    setSession((previous) => {
+      if (previous.phase !== "awaitingContinue" || previous.bridgesSolved !== nextPuzzleIndex) {
+        return previous;
+      }
+      return createBridgeSession(nextPuzzle, {
+        score: previous.score,
+        starsTotal: previous.starsTotal,
+        bridgesSolved: previous.bridgesSolved,
+        maxBridges: previous.maxBridges,
+        sessionSeconds: previous.sessionSeconds,
+      });
+    });
+    setAnnouncement(questionText(nextPuzzle, nextPuzzleIndex + 1));
+  }, [clock.capBridges, expired, roundPuzzles, session.bridgesSolved, session.phase]);
 
   useEffect(() => () => {
     if (retryNoticeTimerRef.current !== null) {
@@ -225,7 +297,8 @@ export default function BridgeBuilderCandidate() {
     }
     lastAcceptedSequenceRef.current = validation.intent.seq;
     clearIntentIssue();
-    if (!hasStarted || expired || session.phase === "exact") return;
+    if (!hasStarted || expired) return;
+    if (session.phase === "exact" && validation.intent.type !== "presentationComplete") return;
     const result = applyBridgeIntent(session, validation.intent);
     setSession(result.state);
     setAnnouncement(feedbackFor(result.state));
@@ -234,6 +307,8 @@ export default function BridgeBuilderCandidate() {
   function dispatchAction(action: BridgeIntentAction) {
     dispatch(createIntent(action, intentContextRef.current));
   }
+
+  presentationDispatchRef.current = () => dispatchAction({ type: "presentationComplete" });
 
   function dispatchSequence(actions: readonly BridgeIntentAction[]) {
     if (!hasStarted || expired || session.phase === "exact") return;
@@ -287,7 +362,7 @@ export default function BridgeBuilderCandidate() {
   function handleDrop(event: DragEvent<HTMLButtonElement>) {
     event.preventDefault();
     const pieceId = event.dataTransfer.getData("text/plain");
-    const piece = CANDIDATE_PUZZLE.tray.find((candidate) => candidate.id === pieceId);
+    const piece = session.puzzle.tray.find((candidate) => candidate.id === pieceId);
     if (piece) {
       dispatchSequence([
         { type: "selectPiece", pieceId: piece.id },
@@ -300,10 +375,14 @@ export default function BridgeBuilderCandidate() {
     setClock(createBridgeClock({ nowMs: performance.now() }));
     setPaused(false);
     setHasStarted(true);
-    setAnnouncement("Choose a plank, then place it in the open span.");
+    setAnnouncement(questionText(session.puzzle, 1));
   }
 
   function startNewRound() {
+    const nextPuzzles = createQualificationRound(roundSeedRef.current++, {
+      previousPuzzle: session.puzzle,
+    });
+    const firstPuzzle = nextPuzzles[0] ?? CANDIDATE_PUZZLE;
     const nextContext = {
       sessionId: newSessionId(),
       generation: intentContextRef.current.generation + 1,
@@ -312,13 +391,14 @@ export default function BridgeBuilderCandidate() {
     setIntentContext(nextContext);
     intentSequenceRef.current = 0;
     lastAcceptedSequenceRef.current = 0;
-    setSession(createBridgeSession(CANDIDATE_PUZZLE));
+    setRoundPuzzles(nextPuzzles);
+    setSession(createBridgeSession(firstPuzzle));
     setClock(createBridgeClock({ nowMs: performance.now() }));
     setPaused(false);
     setHasStarted(true);
     clearIntentIssue();
     setRendererStatus("loading");
-    setAnnouncement("Bridge reset. Choose a plank, then place it in the open span.");
+    setAnnouncement(questionText(firstPuzzle, 1));
   }
 
   const bridgeStyle = {
@@ -335,7 +415,7 @@ export default function BridgeBuilderCandidate() {
         <section className="bb-candidate-setup" data-testid="bridge-setup" aria-labelledby="bridge-setup-title">
           <p className="eyebrow">Before you start</p>
           <h2 id="bridge-setup-title">Ready to build a bridge?</h2>
-          <p>Fill one 10-unit span using whole-number planks. The round is capped at 90 seconds or 6 bridges, whichever comes first.</p>
+          <p>Each solved bridge brings a fresh target and plank set. Build up to 6 bridges in 90 seconds.</p>
           <fieldset className="bb-face-choice">
             <legend>How should plank values appear?</legend>
             <button
@@ -366,9 +446,14 @@ export default function BridgeBuilderCandidate() {
             <div>
               <p className="eyebrow">Qualification vertical slice</p>
               <h2>Build the bridge</h2>
-              <p className="bb-candidate-lede">
-                Compose the labeled planks so the 10-unit span closes exactly. The TypeScript engine decides the
-                answer; Phaser only presents it.
+              <p
+                className="bb-candidate-lede"
+                data-testid="bridge-question"
+                data-puzzle-id={session.puzzle.id}
+                data-gap-units={session.puzzle.gapUnits}
+                aria-live="polite"
+              >
+                {questionText(session.puzzle, currentPuzzleIndex + 1)}
               </p>
             </div>
             <div className="bb-candidate-settings" aria-label="Game settings">
@@ -391,7 +476,9 @@ export default function BridgeBuilderCandidate() {
           </header>
 
           <div className="bb-candidate-status" aria-label="Round status">
-            <span>Bridge {Math.min(session.bridgesSolved + 1, clock.capBridges)} of {clock.capBridges}</span>
+            <span data-testid="bridge-progress">
+              Bridge {Math.min(currentPuzzleIndex + 1, clock.capBridges)} of {clock.capBridges}
+            </span>
             <span data-testid="bridge-clock" className={clock.remainingMs <= 10_000 ? "timer-low" : "timer"}>
               {formatClockMs(clock.remainingMs)}
             </span>
@@ -422,15 +509,17 @@ export default function BridgeBuilderCandidate() {
               <div className="bb-mirror-heading">
                 <div>
                   <p className="eyebrow">Accessible bridge view</p>
-                  <h3 id="bridge-mirror-title">Place the planks</h3>
+                  <h3 id="bridge-mirror-title">
+                    {session.puzzle.presetPlaced.length > 0 ? "Find the missing amount" : "Place the planks"}
+                  </h3>
                 </div>
                 <span className="bb-renderer-status" data-testid="renderer-status">
                   {rendererStatus === "ready" ? "Canvas ready" : rendererStatus === "failed" ? "DOM view active" : "Canvas loading"}
                 </span>
               </div>
 
-              <p className="bb-span-copy" aria-live="polite">
-                The gap needs <strong>{viewModel.spanLabel}</strong>. You have filled <strong>{viewModel.filledUnits}</strong>.
+              <p className="bb-span-copy" data-testid="bridge-span-copy" aria-live="polite">
+                The gap needs <strong>{targetSpanLabel(session.puzzle)}</strong>. You have filled <strong>{viewModel.filledUnits}</strong>.
                 {viewModel.remainingSpan > 0 ? ` ${viewModel.remainingSpan} units remain.` : " The span is closed."}
               </p>
 
@@ -507,7 +596,13 @@ export default function BridgeBuilderCandidate() {
                 >
                   Undo
                 </button>
-                <button type="button" className="button" data-testid="bridge-reset" disabled={expired} onClick={() => dispatchAction({ type: "reset" })}>
+                <button
+                  type="button"
+                  className="button"
+                  data-testid="bridge-reset"
+                  disabled={expired || session.phase === "exact" || session.phase === "awaitingContinue"}
+                  onClick={() => dispatchAction({ type: "reset" })}
+                >
                   Reset
                 </button>
                 {session.phase === "incorrectSubmit" ? (
@@ -544,15 +639,21 @@ export default function BridgeBuilderCandidate() {
           {expired && session.phase !== "exact" ? (
             <div className="bb-candidate-expired" role="status" data-testid="bridge-expired">
               <strong>Round complete</strong>
-              <span>The deadline expired and the state is frozen. This standalone preview has no host return handshake.</span>
+              <span>
+                {session.bridgesSolved >= clock.capBridges
+                  ? "All six bridges are complete. The round is frozen."
+                  : "The deadline expired and the state is frozen. This standalone preview has no host return handshake."}
+              </span>
             </div>
           ) : null}
 
-          {session.phase === "exact" ? (
+          {roundComplete ? (
             <section className="bb-candidate-summary" data-testid="bridge-summary" aria-labelledby="bridge-summary-title">
-              <p className="eyebrow">Bridge complete</p>
-              <h3 id="bridge-summary-title">You made an exact fit.</h3>
-              <p>{formatPoints(session)} · {session.placed.length} planks · {session.attempts} placement attempts</p>
+              <p className="eyebrow">Round complete</p>
+              <h3 id="bridge-summary-title">
+                You solved {session.bridgesSolved} bridge{session.bridgesSolved === 1 ? "" : "s"}.
+              </h3>
+              <p>{formatPoints(session)} · {session.starsTotal} stars</p>
               <p className="muted-label">This qualification build keeps progress in the current tab only.</p>
               <button type="button" className="button primary" onClick={startNewRound}>Start a new round</button>
             </section>

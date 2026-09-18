@@ -86,7 +86,7 @@ export interface Game166Harness {
   sample: { x: number; y: number };
   expectedRgb: typeof EXPECTED_RGB;
   getDiagnostics: () => Game166Diagnostics;
-  snapshotExpectedPixel: () => Promise<Required<SnapshotColor>>;
+  snapshotExpectedPixel: (x?: number, y?: number) => Promise<Required<SnapshotColor>>;
   destroy: () => void;
 }
 
@@ -162,7 +162,9 @@ handle.reconcile(viewModel);
 
 const game = handle.game as unknown as GameLike;
 const sample = {
-  x: Math.round(layout.cliffPx + (puzzle.tray[0].units * layout.unitPx) / 2),
+  // Sample away from the newly centered numeral so the oracle measures the
+  // placed plank fill rather than foreground text.
+  x: Math.round(layout.cliffPx + (puzzle.tray[0].units * layout.unitPx) / 4),
   y: Math.round(Math.max(120, HEIGHT * 0.45)),
 };
 
@@ -185,13 +187,16 @@ function getDiagnostics(): Game166Diagnostics {
   };
 }
 
-function snapshotExpectedPixel(): Promise<Required<SnapshotColor>> {
+function snapshotExpectedPixel(
+  x = sample.x,
+  y = sample.y,
+): Promise<Required<SnapshotColor>> {
   const renderer = game.renderer;
   if (!renderer?.snapshotPixel) {
     return Promise.reject(new Error("Phaser WebGLRenderer.snapshotPixel is unavailable"));
   }
   return new Promise((resolve) => {
-    renderer.snapshotPixel?.(sample.x, sample.y, (color) => {
+    renderer.snapshotPixel?.(x, y, (color) => {
       resolve(normalizeColor(color));
     });
   });
