@@ -22,6 +22,7 @@ type RectLike = {
   setData: (key: string, value: unknown) => RectLike;
   getData: (key: string) => unknown;
   setInteractive: () => RectLike;
+  on?: (event: string, fn: (...args: unknown[]) => void) => RectLike;
   destroy: () => void;
   x: number;
   y: number;
@@ -78,10 +79,6 @@ export class BridgeSceneController {
   private feedbackLabel: TextLike | null = null;
   private destroyed = false;
 
-  private readonly onPointerDown = (...args: unknown[]) => {
-    this.forwardPointer("down", args[0]);
-  };
-
   private readonly onPointerMove = (...args: unknown[]) => {
     this.forwardPointer("move", args[0]);
   };
@@ -117,7 +114,6 @@ export class BridgeSceneController {
       color: "#334455",
     });
 
-    scene.input.on("pointerdown", this.onPointerDown);
     scene.input.on("pointermove", this.onPointerMove);
     scene.input.on("pointerup", this.onPointerUp);
     scene.input.on("pointerupoutside", this.onPointerCancel);
@@ -165,7 +161,16 @@ export class BridgeSceneController {
     this.gapRect?.destroy();
     this.gapRect = scene.add
       .rectangle(gapX + gapW / 2, gapY, gapW, 10, 0x7aa0b8, 0.35)
-      .setData("role", "gap") as RectLike;
+      .setData("role", "gap")
+      .setInteractive() as RectLike;
+    this.gapRect.on?.("pointerup", () => {
+      this.host.emitPointerEvent({
+        phase: "up",
+        targetPieceId: null,
+        overGap: true,
+        generation: this.host.getInputGeneration(),
+      });
+    });
 
     // Clear previous piece rects.
     for (const rect of this.trayRects.values()) rect.destroy();
@@ -193,6 +198,14 @@ export class BridgeSceneController {
       rect.setData("pieceId", piece.id);
       rect.setData("role", "tray");
       rect.setInteractive();
+      rect.on?.("pointerdown", () => {
+        this.host.emitPointerEvent({
+          phase: "down",
+          targetPieceId: piece.id,
+          overGap: false,
+          generation: this.host.getInputGeneration(),
+        });
+      });
       this.trayRects.set(piece.id, rect);
       trayX += w + 12;
     }
@@ -260,7 +273,6 @@ export class BridgeSceneController {
   destroy(): void {
     this.destroyed = true;
     if (this.scene) {
-      this.scene.input.off("pointerdown", this.onPointerDown);
       this.scene.input.off("pointermove", this.onPointerMove);
       this.scene.input.off("pointerup", this.onPointerUp);
       this.scene.input.off("pointerupoutside", this.onPointerCancel);
