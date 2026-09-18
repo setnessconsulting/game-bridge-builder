@@ -13,6 +13,7 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -32,6 +33,7 @@ jobs:
   real-phaser-render:
     name: real-phaser-render
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -39,6 +41,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Record installed Phaser and Playwright packages
+        run: npm ls phaser @playwright/test
       - name: Install Playwright Chromium and system dependencies
         run: npx playwright install --with-deps chromium
       - name: Record Playwright version
@@ -49,11 +53,16 @@ jobs:
         shell: bash
         run: |
           set +e
-          GAME_166_BREAK_RENDER=1 npx playwright test -c playwright.phaser.config.ts -g "actual installed Phaser renders deterministic placed piece"
+          GAME_166_BREAK_RENDER=1 npx playwright test -c playwright.phaser.config.ts -g "actual installed Phaser renders deterministic placed piece" > /tmp/game166-negative.log 2>&1
           status=$?
           set -e
+          cat /tmp/game166-negative.log
           if [ "$status" -eq 0 ]; then
             echo "::error::Negative control unexpectedly passed; the render oracle did not detect the omitted placed piece."
             exit 1
           fi
-          echo "Negative control failed as expected with exit code $status."
+          if ! grep -Fq "GAME166_RENDER_ORACLE expected the blue placed-piece pixel" /tmp/game166-negative.log; then
+            echo "::error::Negative control failed for an unexpected reason."
+            exit 1
+          fi
+          echo "Negative control failed for the intended render-oracle reason with exit code $status."
