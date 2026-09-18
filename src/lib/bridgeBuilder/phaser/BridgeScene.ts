@@ -119,11 +119,18 @@ export class BridgeSceneController {
     scene.input.on("pointermove", this.onPointerMove);
     scene.input.on("pointerup", this.onPointerUp);
     scene.input.on("pointerupoutside", this.onPointerCancel);
+
+    // GAME-166: React may reconcile before Phaser invokes Scene.create().
+    // Retain and replay that authoritative view model after scene attachment.
+    if (this.viewModel) {
+      this.reconcile(this.viewModel);
+    }
   }
 
   reconcile(vm: BridgeViewModel): void {
-    if (this.destroyed || !this.scene) return;
+    if (this.destroyed) return;
     this.viewModel = vm;
+    if (!this.scene) return;
     const scene = this.scene;
     const cliff = vm.layout.cliffPx;
     const unitPx = vm.layout.unitPx;

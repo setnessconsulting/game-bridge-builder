@@ -2,6 +2,7 @@ name: Bridge Builder CI
 
 on:
   pull_request:
+    branches: [main]
   push:
     branches: [main]
 
@@ -10,18 +11,64 @@ permissions:
 
 jobs:
   verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Focused Phaser and GAME-132 unit tests
+        run: npx vitest run tests/bridgeBuilderPhaserHarness.test.ts tests/bridgeBuilderPhaserInput.test.ts tests/bridgeBuilderPhaserLifecycle.test.ts tests/game132VerticalSlice.test.ts
+      - name: Full unit suite
+        run: npm test
+      - name: Type check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+  real-phaser-render:
+    name: real-phaser-render
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e:run
+      - name: Record installed Phaser and Playwright packages
+        run: npm ls phaser @playwright/test
+      - name: Install Playwright Chromium and system dependencies
+        run: npx playwright install --with-deps chromium
+      - name: Record Playwright version
+        run: npx playwright --version
+      - name: Real installed-Phaser render lane
+        run: npm run test:phaser-render
+      - name: Prove pixel oracle rejects a deliberately omitted render object
+        shell: bash
+        run: |
+          set +e
+          GAME_166_BREAK_RENDER=1 npx playwright test -c playwright.phaser.config.ts -g "actual installed Phaser renders deterministic placed piece" > /tmp/game166-negative.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/game166-negative.log
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Negative control unexpectedly passed; the render oracle did not detect the omitted placed piece."
+            exit 1
+          fi
+          if ! grep -Fq "GAME166_RENDER_ORACLE expected the blue placed-piece pixel" /tmp/game166-negative.log; then
+            echo "::error::Negative control failed for an unexpected reason."
+            exit 1
+          fi
+          echo "Negative control failed for the intended render-oracle reason with exit code $status."
+      - name: Build GAME-132 browser slice
+        run: npm run build
+      - name: GAME-132 browser, responsive, reduced-motion, and axe qualification
+        run: npm run test:e2e:run

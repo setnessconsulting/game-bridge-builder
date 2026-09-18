@@ -42,7 +42,7 @@ export interface PhaserModuleLike {
       resize: (width: number, height: number) => void;
     };
   };
-  Scene: new (config?: string | Record<string, unknown>) => unknown;
+  Scene: new (config?: string | Record<string, unknown>) => object;
 }
 
 /**
@@ -59,48 +59,14 @@ export async function createBridgeGame(
     options.PhaserModule ??
     ((await import("phaser")) as unknown as PhaserModuleLike);
 
-  // Minimal scene class that delegates to the controller.
-  class HostedBridgeScene {
+  // The hosted production scene must be a genuine Phaser.Scene so the same
+  // scene lifecycle and renderer plumbing exercised in-browser are used here.
+  class HostedBridgeScene extends PhaserModule.Scene {
     static KEY = BRIDGE_SCENE_KEY;
-    // Phaser assigns these at runtime.
-    add!: {
-      rectangle: (
-        x: number,
-        y: number,
-        w: number,
-        h: number,
-        color: number,
-        alpha?: number
-      ) => {
-        setPosition: (x: number, y: number) => unknown;
-        setDisplaySize: (w: number, h: number) => unknown;
-        setFillStyle: (color: number, alpha?: number) => unknown;
-        setData: (key: string, value: unknown) => unknown;
-        getData: (key: string) => unknown;
-        setInteractive: () => unknown;
-        destroy: () => void;
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-      };
-      text: (
-        x: number,
-        y: number,
-        text: string,
-        style?: Record<string, unknown>
-      ) => {
-        setText: (value: string) => unknown;
-        setPosition: (x: number, y: number) => unknown;
-        destroy: () => void;
-      };
-    };
-    input!: {
-      on: (event: string, fn: (...args: unknown[]) => void) => void;
-      off: (event: string, fn: (...args: unknown[]) => void) => void;
-    };
-    cameras!: { main: { setBackgroundColor: (color: string) => void } };
-    scale!: { width: number; height: number };
+
+    constructor() {
+      super({ key: BRIDGE_SCENE_KEY });
+    }
 
     create(): void {
       controller.attach(this as never);
