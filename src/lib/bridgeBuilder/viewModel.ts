@@ -153,14 +153,19 @@ export function deriveBridgeViewModel(
   const layout = options.layout ?? createBridgeLayout();
   const filled = compositionUnits(state.puzzle, state.placed);
   const remaining = remainingSpanUnits(state.puzzle, state.placed);
+  const placementOverfill =
+    state.lastOutcome?.status === "overhang" ||
+    state.lastOutcome?.status === "overshoot";
   const verdict =
     state.phase === "exact"
       ? "exact"
-      : state.phase === "incorrectSubmit"
-        ? exactFitVerdict(state.puzzle.gapUnits, filled)
-        : state.lastOutcome
+      : placementOverfill
+        ? "overfill"
+        : state.phase === "incorrectSubmit"
           ? exactFitVerdict(state.puzzle.gapUnits, filled)
-          : null;
+          : state.lastOutcome
+            ? exactFitVerdict(state.puzzle.gapUnits, filled)
+            : null;
 
   const tray = availableTray(state.tray, state.placed);
   const draggingPieceId = options.draggingPieceId ?? null;
@@ -187,7 +192,7 @@ export function deriveBridgeViewModel(
   const exact = state.phase === "exact" || verdict === "exact";
   const underfill = remaining > 0 && !exact;
   const overfill =
-    state.lastOutcome?.status === "overhang" ||
+    placementOverfill ||
     (verdict === "overfill" && state.phase === "incorrectSubmit");
   const incorrectSubmit = state.phase === "incorrectSubmit";
   const success = exact;
