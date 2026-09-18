@@ -12,6 +12,7 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   applyBridgeIntent,
@@ -116,6 +117,34 @@ export default function BridgeBuilderPhaserHost({
       normalizeDirectInput(inputRef.current, {
         source,
         intent,
+      })
+    );
+  }
+
+  function handleCanvasPointer(
+    phase: "down" | "move" | "up" | "cancel",
+    event: ReactPointerEvent<HTMLDivElement>
+  ) {
+    const canvas = parentRef.current?.querySelector("canvas");
+    const controller = gameRef.current?.controller;
+    if (!canvas || !controller) return;
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const x = (event.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (event.clientY - rect.top) * (canvas.height / rect.height);
+    const hit = controller.pieceAt(x, y);
+
+    if (phase === "down" || inputRef.current.draggingPieceId) {
+      event.preventDefault();
+    }
+
+    applyNormalized(
+      normalizePointerEvent(inputRef.current, {
+        phase,
+        targetPieceId: hit?.role === "tray" ? hit.pieceId : null,
+        overGap: controller.isOverGap(x, y),
+        generation: inputRef.current.inputGeneration,
       })
     );
   }
@@ -265,6 +294,10 @@ export default function BridgeBuilderPhaserHost({
           border: "1px solid #c5d5e2",
         }}
         aria-hidden="true"
+        onPointerDown={(event) => handleCanvasPointer("down", event)}
+        onPointerMove={(event) => handleCanvasPointer("move", event)}
+        onPointerUp={(event) => handleCanvasPointer("up", event)}
+        onPointerCancel={(event) => handleCanvasPointer("cancel", event)}
       />
 
       <section
