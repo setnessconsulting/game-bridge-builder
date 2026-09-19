@@ -64,7 +64,7 @@ jobs:
         env:
           GAME_RELEASE_VERSION: ${{ inputs.version || '0.1.0-qualification.8' }}
           GAME_COMMIT_SHA: ${{ github.sha }}
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: bridge-builder-${{ inputs.version || '0.1.0-qualification.8' }}
           path: dist
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: bridge-builder-qualification
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v6
         with:
           name: bridge-builder-${{ inputs.version || '0.1.0-qualification.8' }}
           path: dist
