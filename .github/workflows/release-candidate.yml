@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-24.04
     environment: bridge-builder-qualification
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: bridge-builder-${{ inputs.version || '0.1.0-qualification.8' }}
           path: dist
