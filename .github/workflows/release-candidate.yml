@@ -120,7 +120,18 @@ jobs:
 
           for file in "${files[@]}"; do
             relative="${file#dist/}"
-            content_type="$(file --brief --mime-type "$file")"
+            case "${relative,,}" in
+              *.css) content_type="text/css" ;;
+              *.js|*.mjs) content_type="text/javascript" ;;
+              *.html) content_type="text/html" ;;
+              *.json) content_type="application/json" ;;
+              *.wasm) content_type="application/wasm" ;;
+              *.svg) content_type="image/svg+xml" ;;
+              *.png) content_type="image/png" ;;
+              *.jpg|*.jpeg) content_type="image/jpeg" ;;
+              *.webp) content_type="image/webp" ;;
+              *) content_type="$(file --brief --mime-type "$file")" ;;
+            esac
             wrangler r2 object put "setnessconsulting-games/${prefix}/${relative}" \
               --file="$file" \
               --content-type="$content_type" \
