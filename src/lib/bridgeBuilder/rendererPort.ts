@@ -24,6 +24,8 @@ export interface BridgeRendererPort {
   onIntent(listener: (intent: BridgeIntent) => void): () => void;
   setReducedMotion(reduced: boolean): void;
   setMuted(muted: boolean): void;
+  /** Pause/resume presentation animation without changing engine state. */
+  setPaused(paused: boolean): void;
   resize?(width: number, height: number): void;
   dispose(): void;
 }

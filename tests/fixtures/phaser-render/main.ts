@@ -14,7 +14,7 @@ import { BRIDGE_SCENE_KEY } from "@/lib/bridgeBuilder/phaser/BridgeScene";
 
 const WIDTH = 640;
 const HEIGHT = 360;
-const EXPECTED_RGB = { red: 47, green: 111, blue: 237 } as const;
+const EXPECTED_RGB = { red: 185, green: 124, blue: 64 } as const;
 
 const puzzle: BridgePuzzle = {
   id: "game-166-real-render",

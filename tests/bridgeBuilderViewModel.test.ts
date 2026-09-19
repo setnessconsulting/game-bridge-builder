@@ -112,6 +112,16 @@ describe("GAME-130 view model contract", () => {
     expect(after.layout.dpr).toBe(2);
   });
 
+  it("uses the documented responsive breakpoints", () => {
+    const state = createBridgeSession(puzzle);
+    const buckets = [640, 641, 1024, 1025].map((canvasWidth) =>
+      deriveBridgeViewModel(state, {
+        layout: createBridgeLayout({ canvasWidth, canvasHeight: 360 }),
+      }).responsive,
+    );
+    expect(buckets).toEqual(["phone", "tablet", "tablet", "desktop"]);
+  });
+
   it("exposes an exhaustive closed intent allowlist", () => {
     expect([...RENDERER_ALLOWED_INTENTS].sort()).toEqual([...BRIDGE_INTENT_TYPES].sort());
   });

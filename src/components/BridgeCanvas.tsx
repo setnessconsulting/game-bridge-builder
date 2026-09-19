@@ -15,6 +15,8 @@ interface Props {
   onStatusChange?: (status: BridgeRendererStatus) => void;
   onVersionSkew?: (rendererVersion: string, viewModelVersion: string) => void;
   onInvalidIntent?: (reason: string) => void;
+  onResize?: (width: number, height: number) => void;
+  paused?: boolean;
 }
 
 /** Real Phaser surface. React remains the semantic and keyboard-accessible source. */
@@ -39,22 +41,25 @@ export default function BridgeCanvas(props: Props) {
       onInvalidIntent: (reason) => propsRef.current.onInvalidIntent?.(reason),
     };
 
-    void port.mount(parent, propsRef.current.viewModel, options).catch(() => {
-      // The accessible DOM mirror remains live when the optional canvas fails.
-      propsRef.current.onStatusChange?.("failed");
-    });
+    void port.mount(parent, propsRef.current.viewModel, options)
+      .then(() => port.setPaused(Boolean(propsRef.current.paused)))
+      .catch(() => {
+        // The accessible DOM mirror remains live when the optional canvas fails.
+        propsRef.current.onStatusChange?.("failed");
+      });
 
     const observer =
       typeof ResizeObserver === "undefined"
         ? null
         : new ResizeObserver(([entry]) => {
             if (!entry) return;
-            const width = Math.max(320, Math.floor(entry.contentRect.width));
-            const height = Math.max(240, Math.round((width * 360) / 640));
+            const width = Math.max(280, Math.floor(entry.contentRect.width));
+            const height = Math.max(180, Math.round(entry.contentRect.height || (width * 360) / 640));
             const previous = lastResizeRef.current;
             if (previous?.width === width && previous.height === height) return;
             lastResizeRef.current = { width, height };
             port.resize?.(width, height);
+            propsRef.current.onResize?.(width, height);
           });
     observer?.observe(parent);
 
@@ -72,10 +77,17 @@ export default function BridgeCanvas(props: Props) {
     portRef.current?.applyViewModel(props.viewModel);
     portRef.current?.setReducedMotion(props.viewModel.flags.reducedMotion);
     portRef.current?.setMuted(props.viewModel.flags.mute);
-  }, [props.viewModel]);
+    portRef.current?.setPaused(Boolean(props.paused));
+  }, [props.paused, props.viewModel]);
 
   return (
-    <div className="bb-candidate-canvas" ref={parentRef} data-testid="bridge-phaser-canvas-host">
+    <div
+      className="bb-candidate-canvas"
+      ref={parentRef}
+      data-testid="bridge-phaser-canvas-host"
+      data-responsive={props.viewModel.responsive}
+      data-paused={props.paused ? "true" : "false"}
+    >
       <p className="sr-only" data-testid="phaser-render-status">
         Phaser rendering surface loading.
       </p>

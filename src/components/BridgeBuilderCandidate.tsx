@@ -23,9 +23,11 @@ import {
   applyBridgeIntent,
   createBridgeSession,
   type BridgeSessionState,
+  type BridgeSessionEffect,
 } from "@/lib/bridgeBuilder/session";
 import { formatScaled } from "@/lib/bridgeBuilder/format";
 import { createQualificationRound } from "@/lib/bridgeBuilder/qualificationRound";
+import { closeBridgeSoundContext, playBridgeCue } from "@/lib/bridgeBuilder/sound";
 import type { BridgePuzzle, Piece } from "@/lib/bridgeBuilder/types";
 import { deriveBridgeViewModel, type BridgeNumberFace } from "@/lib/bridgeBuilder/viewModel";
 import BridgeCanvas from "./BridgeCanvas";
@@ -122,15 +124,23 @@ export default function BridgeBuilderCandidate() {
   const retryNoticeTimerRef = useRef<number | null>(null);
   const presentationDispatchRef = useRef<() => void>(() => {});
   const [hasStarted, setHasStarted] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true,
+  );
   const [muted, setMuted] = useState(false);
   const [numberFace, setNumberFace] = useState<BridgeNumberFace>("numerals");
   const [paused, setPaused] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ width: 640, height: 360 });
   const [announcement, setAnnouncement] = useState(feedbackFor(session));
   const [intentIssue, setIntentIssue] = useState<string | null>(null);
   const [rendererStatus, setRendererStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const soundRef = useRef<AudioContext | null>(null);
+  const finishCuePlayedRef = useRef(false);
 
-  const layout = useMemo(() => createBridgeLayout({ canvasWidth: 640, canvasHeight: 360 }), []);
+  const layout = useMemo(
+    () => createBridgeLayout({ canvasWidth: canvasSize.width, canvasHeight: canvasSize.height }),
+    [canvasSize],
+  );
   const expired = clock.expired || clock.remainingMs === 0;
   const currentPuzzleIndex = Math.max(
     0,
@@ -144,6 +154,7 @@ export default function BridgeBuilderCandidate() {
         reducedMotion,
         muted,
         numberFace,
+        crossing: session.phase === "exact" && !reducedMotion,
         session: {
           mode: clock.mode,
           sessionId: intentContext.sessionId,
@@ -162,6 +173,25 @@ export default function BridgeBuilderCandidate() {
   const selectedPiece = session.selectedPieceId
     ? session.puzzle.tray.find((piece) => piece.id === session.selectedPieceId)
     : undefined;
+
+  function playEffects(effects: readonly BridgeSessionEffect[]): void {
+    if (muted) return;
+    for (const effect of effects) {
+      if (effect.type === "cue") playBridgeCue(soundRef, effect.cue);
+    }
+  }
+
+  function playCue(cue: "pickup" | "finish"): void {
+    if (!muted) playBridgeCue(soundRef, cue);
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = () => setReducedMotion(media.matches);
+    media.addEventListener?.("change", onChange);
+    return () => media.removeEventListener?.("change", onChange);
+  }, []);
 
   useEffect(() => {
     if (!hasStarted) return;
@@ -186,7 +216,7 @@ export default function BridgeBuilderCandidate() {
 
   useEffect(() => {
     if (expired && session.phase !== "exact") {
-      setAnnouncement("Time is up. This round is frozen before returning.");
+      setAnnouncement("Time is up. Your round is frozen.");
     }
   }, [expired, session.phase]);
 
@@ -244,7 +274,16 @@ export default function BridgeBuilderCandidate() {
     if (retryNoticeTimerRef.current !== null) {
       window.clearTimeout(retryNoticeTimerRef.current);
     }
+    closeBridgeSoundContext(soundRef);
   }, []);
+
+  useEffect(() => {
+    if (session.bridgesSolved >= clock.capBridges && !finishCuePlayedRef.current) {
+      playCue("finish");
+      finishCuePlayedRef.current = true;
+    }
+    if (session.bridgesSolved < clock.capBridges) finishCuePlayedRef.current = false;
+  }, [clock.capBridges, muted, session.bridgesSolved]);
 
   function clearIntentIssue() {
     if (retryNoticeTimerRef.current !== null) {
@@ -299,7 +338,9 @@ export default function BridgeBuilderCandidate() {
     clearIntentIssue();
     if (!hasStarted || expired) return;
     if (session.phase === "exact" && validation.intent.type !== "presentationComplete") return;
+    if (validation.intent.type === "selectPiece") playCue("pickup");
     const result = applyBridgeIntent(session, validation.intent);
+    playEffects(result.effects);
     setSession(result.state);
     setAnnouncement(feedbackFor(result.state));
   }
@@ -324,7 +365,10 @@ export default function BridgeBuilderCandidate() {
         return;
       }
       lastAcceptedSequenceRef.current = validation.intent.seq;
-      next = applyBridgeIntent(next, validation.intent).state;
+      if (validation.intent.type === "selectPiece") playCue("pickup");
+      const result = applyBridgeIntent(next, validation.intent);
+      playEffects(result.effects);
+      next = result.state;
     }
     clearIntentIssue();
     setSession(next);
@@ -402,13 +446,16 @@ export default function BridgeBuilderCandidate() {
   }
 
   const bridgeStyle = {
-    "--bb-span-width": `${Math.max(240, viewModel.span * 24)}px`,
+    "--bb-span-width": `${Math.max(240, viewModel.span * viewModel.layout.unitPx)}px`,
   } as CSSProperties;
 
   return (
     <div
       className={`bb-candidate ${reducedMotion ? "bb-reduce-motion" : ""}`}
       data-testid="bridge-builder-candidate"
+      data-verdict={viewModel.verdict ?? "building"}
+      data-responsive={viewModel.responsive}
+      data-paused={paused ? "true" : "false"}
       onKeyDown={handleKeyDown}
     >
       {!hasStarted ? (
@@ -432,10 +479,10 @@ export default function BridgeBuilderCandidate() {
               aria-pressed={numberFace === "dots"}
               onClick={() => setNumberFace("dots")}
             >
-              Dot faces
+              Dots
             </button>
           </fieldset>
-          <p className="muted-label">Numerals are the default. Dot faces are an optional g12 display mode.</p>
+          <p className="muted-label">Numbers are the default. Dots show each plank value visually.</p>
           <button type="button" className="button primary" data-testid="bridge-start" onClick={beginRound}>
             Start building
           </button>
@@ -444,7 +491,7 @@ export default function BridgeBuilderCandidate() {
         <>
           <header className="bb-candidate-header">
             <div>
-              <p className="eyebrow">Qualification vertical slice</p>
+              <p className="eyebrow">Your bridge</p>
               <h2>Build the bridge</h2>
               <p
                 className="bb-candidate-lede"
@@ -457,7 +504,7 @@ export default function BridgeBuilderCandidate() {
               </p>
             </div>
             <div className="bb-candidate-settings" aria-label="Game settings">
-              <span className="pill">Early bridge math</span>
+              <span className="bb-setting-label">Number style</span>
               <button type="button" className="bb-small-button" onClick={() => setReducedMotion((value) => !value)}>
                 {reducedMotion ? "Motion off" : "Reduce motion"}
               </button>
@@ -470,7 +517,7 @@ export default function BridgeBuilderCandidate() {
                 data-testid="toggle-face-mode"
                 onClick={() => setNumberFace((face) => face === "numerals" ? "dots" : "numerals")}
               >
-                {numberFace === "numerals" ? "Use dot faces" : "Use numerals"}
+                {numberFace === "numerals" ? "Use dots" : "Use numbers"}
               </button>
             </div>
           </header>
@@ -492,6 +539,10 @@ export default function BridgeBuilderCandidate() {
             <BridgeCanvas
               key={intentContext.generation}
               viewModel={viewModel}
+              paused={paused}
+              onResize={(width, height) => setCanvasSize((previous) =>
+                previous.width === width && previous.height === height ? previous : { width, height },
+              )}
               createIntent={createIntent}
               onIntent={dispatch}
               onStatusChange={setRendererStatus}
@@ -505,7 +556,14 @@ export default function BridgeBuilderCandidate() {
               onInvalidIntent={(reason) => rejectIntent(reason)}
             />
 
-            <section className="bb-candidate-mirror" data-testid="bridge-dom-mirror" aria-labelledby="bridge-mirror-title">
+            <section
+              className="bb-candidate-mirror"
+              data-testid="bridge-dom-mirror"
+              data-verdict={viewModel.verdict ?? "building"}
+              data-crossing={viewModel.crossing ? "true" : "false"}
+              data-reduced-motion={reducedMotion ? "true" : "false"}
+              aria-labelledby="bridge-mirror-title"
+            >
               <div className="bb-mirror-heading">
                 <div>
                   <p className="eyebrow">Accessible bridge view</p>
@@ -523,7 +581,13 @@ export default function BridgeBuilderCandidate() {
                 {viewModel.remainingSpan > 0 ? ` ${viewModel.remainingSpan} units remain.` : " The span is closed."}
               </p>
 
-              <div className="bb-candidate-bridge" style={bridgeStyle} role="group" aria-label="Bridge span">
+              <div
+                className={`bb-candidate-bridge ${viewModel.exact ? "is-exact" : ""} ${viewModel.overfill ? "is-over" : ""}`}
+                style={bridgeStyle}
+                data-state={viewModel.exact ? "exact" : viewModel.overfill ? "overfill" : "underfill"}
+                role="group"
+                aria-label="Bridge span"
+              >
                 {viewModel.placed.map((piece) => (
                   <button
                     key={piece.id}
@@ -539,7 +603,7 @@ export default function BridgeBuilderCandidate() {
                 ))}
                 <button
                   type="button"
-                  className={`bb-candidate-open-slot ${viewModel.overfill ? "is-over" : ""}`}
+                  className={`bb-candidate-open-slot ${viewModel.overfill ? "is-over" : ""} ${viewModel.exact ? "is-exact" : ""}`}
                   data-testid="bridge-open-slot"
                   aria-label={selectedPiece ? `Place ${pieceLabel(selectedPiece)} in the open span` : "Open span; select a plank first"}
                   disabled={!viewModel.capabilities.canPlace}
@@ -556,7 +620,7 @@ export default function BridgeBuilderCandidate() {
                   <button
                     key={piece.id}
                     type="button"
-                    className={`bb-candidate-piece ${piece.selected ? "is-selected" : ""}`}
+                    className={`bb-candidate-piece ${piece.selected ? "is-selected" : ""} ${piece.focused ? "is-focused" : ""}`}
                     data-testid={`piece-${piece.id}`}
                     data-piece-id={piece.id}
                     data-units={piece.units}
@@ -619,7 +683,12 @@ export default function BridgeBuilderCandidate() {
                 </p>
               ) : null}
 
-              <p className={`bb-candidate-feedback ${viewModel.exact ? "is-success" : viewModel.overfill || viewModel.incorrectSubmit ? "is-correction" : ""}`} data-testid="bridge-feedback" aria-live="polite">
+              <p
+                className={`bb-candidate-feedback ${viewModel.exact ? "is-success" : viewModel.overfill || viewModel.incorrectSubmit ? "is-correction" : ""}`}
+                data-testid="bridge-feedback"
+                data-state={viewModel.exact ? "exact" : viewModel.overfill ? "overfill" : viewModel.underfill ? "underfill" : "building"}
+                aria-live="polite"
+              >
                 {announcement}
               </p>
             </section>
@@ -629,8 +698,12 @@ export default function BridgeBuilderCandidate() {
             <div className="bb-candidate-pause" role="dialog" aria-modal="true" aria-label="Game paused">
               <div className="bb-candidate-pause-card">
                 <p className="eyebrow">Paused</p>
-                <h3>Take your time</h3>
-                <p>The free-site pause budget is {Math.ceil(clock.pauseBudgetRemainingMs / 1000)} seconds.</p>
+                <h3>Paused — the clock is waiting.</h3>
+                <p>
+                  {clock.pauseBudgetRemainingMs > 0
+                    ? `Up to ${Math.ceil(clock.pauseBudgetRemainingMs / 1000)} seconds of pause.`
+                    : "No pause time remains; resume to keep going."}
+                </p>
                 <button type="button" className="button primary" onClick={togglePause}>Resume bridge</button>
               </div>
             </div>
@@ -641,8 +714,8 @@ export default function BridgeBuilderCandidate() {
               <strong>Round complete</strong>
               <span>
                 {session.bridgesSolved >= clock.capBridges
-                  ? "All six bridges are complete. The round is frozen."
-                  : "The deadline expired and the state is frozen. This standalone preview has no host return handshake."}
+                  ? "All six bridges are complete."
+                  : "Time is up. Your round is frozen."}
               </span>
             </div>
           ) : null}
@@ -654,7 +727,7 @@ export default function BridgeBuilderCandidate() {
                 You solved {session.bridgesSolved} bridge{session.bridgesSolved === 1 ? "" : "s"}.
               </h3>
               <p>{formatPoints(session)} · {session.starsTotal} stars</p>
-              <p className="muted-label">This qualification build keeps progress in the current tab only.</p>
+              <p className="muted-label">Your progress stays on this device for this round.</p>
               <button type="button" className="button primary" onClick={startNewRound}>Start a new round</button>
             </section>
           ) : null}

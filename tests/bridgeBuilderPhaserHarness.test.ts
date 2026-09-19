@@ -173,6 +173,7 @@ describe("GAME-131 Phaser harness reconciliation", () => {
     expect(labels.map((label) => label.text)).toContain("Target span: 10");
     expect(labels.map((label) => label.text)).toContain("4");
     expect(labels.map((label) => label.text)).not.toContain("4-unit plank");
+    expect(controller.getInteractionGeometry().tray.every((piece) => piece.hitHeight >= 48)).toBe(true);
     controller.destroy();
     expect(destroyed.length).toBeGreaterThan(0);
   });

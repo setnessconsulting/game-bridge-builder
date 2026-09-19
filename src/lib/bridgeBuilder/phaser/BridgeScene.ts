@@ -9,6 +9,28 @@ import { formatScaled } from "../format";
 
 export const BRIDGE_SCENE_KEY = "BridgeScene";
 
+const COLORS = {
+  sky: 0xbfe8f5,
+  cloud: 0xeaf8fb,
+  water: 0x3f9ab2,
+  waterDeep: 0x2b708c,
+  cliff: 0xa76645,
+  cliffLight: 0xc58a5f,
+  cliffShadow: 0x74402f,
+  stone: 0xe4c79c,
+  stoneShadow: 0xb98e61,
+  wood: 0xb77a3c,
+  woodLight: 0xe6b56e,
+  woodDark: 0x6a3a21,
+  ink: 0x102a43,
+  inkSoft: 0x38536a,
+  target: 0xf5d27b,
+  exact: 0x3c9a72,
+  amber: 0xd0a33a,
+  overfill: 0xb85c4a,
+  white: 0xffffff,
+} as const;
+
 export interface BridgeSceneHost {
   emitPointerEvent: (event: BridgePointerEvent) => void;
   getInputGeneration: () => number;
@@ -23,6 +45,8 @@ export interface BridgeInteractionGeometry {
     y: number;
     width: number;
     height: number;
+    hitWidth: number;
+    hitHeight: number;
   }>;
   gap: { x: number; y: number; width: number; height: number } | null;
 }
@@ -40,6 +64,17 @@ type RectLike = {
   y: number;
   width: number;
   height: number;
+};
+
+type GraphicsLike = {
+  clear: () => GraphicsLike;
+  fillStyle: (color: number, alpha?: number) => GraphicsLike;
+  fillRect: (x: number, y: number, w: number, h: number) => GraphicsLike;
+  fillCircle: (x: number, y: number, radius: number) => GraphicsLike;
+  lineStyle: (width: number, color: number, alpha?: number) => GraphicsLike;
+  lineBetween: (x1: number, y1: number, x2: number, y2: number) => GraphicsLike;
+  strokeRect: (x: number, y: number, w: number, h: number) => GraphicsLike;
+  destroy: () => void;
 };
 
 type TextLike = {
@@ -65,6 +100,7 @@ type SceneLike = {
       text: string,
       style?: Record<string, unknown>
     ) => TextLike;
+    graphics?: () => GraphicsLike;
   };
   input: {
     on: (event: string, fn: (...args: unknown[]) => void) => void;
@@ -72,7 +108,79 @@ type SceneLike = {
   };
   cameras: { main: { setBackgroundColor: (color: string) => void } };
   scale: { width: number; height: number };
+  tweens?: {
+    add: (config: Record<string, unknown>) => unknown;
+    killTweensOf?: (target: unknown) => void;
+  };
 };
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function drawDashedLine(
+  graphics: GraphicsLike,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  dash: number,
+  gap: number,
+): void {
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  if (length === 0) return;
+  const dx = (x2 - x1) / length;
+  const dy = (y2 - y1) / length;
+  for (let offset = 0; offset < length; offset += dash + gap) {
+    const end = Math.min(length, offset + dash);
+    graphics.lineBetween(
+      x1 + dx * offset,
+      y1 + dy * offset,
+      x1 + dx * end,
+      y1 + dy * end,
+    );
+  }
+}
+
+function drawPlank(
+  graphics: GraphicsLike,
+  x: number,
+  centerY: number,
+  width: number,
+  height: number,
+  options: { selected?: boolean; placed?: boolean; overfill?: boolean } = {},
+): void {
+  const safeWidth = Math.max(24, width);
+  const halfHeight = height / 2;
+  const endRadius = Math.min(halfHeight, Math.max(7, Math.min(14, safeWidth / 8)));
+  const bodyX = x + endRadius;
+  const bodyWidth = Math.max(1, safeWidth - endRadius * 2);
+  const bodyY = centerY - halfHeight;
+  const bodyColor = options.overfill
+    ? COLORS.overfill
+    : options.selected
+      ? COLORS.target
+      : options.placed
+        ? COLORS.wood
+        : COLORS.woodLight;
+
+  graphics
+    .fillStyle(COLORS.woodDark, 0.24)
+    .fillRect(x + 2, bodyY + 6, safeWidth, height)
+    .fillStyle(bodyColor, 1)
+    .fillRect(bodyX, bodyY, bodyWidth, height)
+    .fillStyle(bodyColor, 1)
+    .fillCircle(bodyX, centerY, endRadius)
+    .fillCircle(bodyX + bodyWidth, centerY, endRadius)
+    .lineStyle(options.selected ? 3 : 2, options.overfill ? COLORS.ink : COLORS.woodDark, 1)
+    .strokeRect(bodyX, bodyY, bodyWidth, height)
+    .lineStyle(1, COLORS.woodLight, 0.7)
+    .lineBetween(bodyX + 8, centerY - 5, bodyX + bodyWidth - 8, centerY - 5)
+    .lineBetween(bodyX + 12, centerY + 5, bodyX + bodyWidth - 12, centerY + 5)
+    .lineStyle(2, COLORS.woodDark, 0.9)
+    .lineBetween(bodyX + 4, bodyY + 3, bodyX + 4, bodyY + height - 3)
+    .lineBetween(bodyX + bodyWidth - 4, bodyY + 3, bodyX + bodyWidth - 4, bodyY + height - 3);
+}
 
 /**
  * Lightweight scene controller usable with real Phaser or test doubles.
@@ -88,6 +196,10 @@ export class BridgeSceneController {
   private pieceLabels = new Map<string, TextLike>();
   private gapRect: RectLike | null = null;
   private successMarker: RectLike | null = null;
+  private environmentLayer: GraphicsLike | null = null;
+  private targetLayer: GraphicsLike | null = null;
+  private pieceLayer: GraphicsLike | null = null;
+  private effectLayer: GraphicsLike | null = null;
   private spanLabel: TextLike | null = null;
   private remainingLabel: TextLike | null = null;
   private feedbackLabel: TextLike | null = null;
@@ -111,27 +223,33 @@ export class BridgeSceneController {
 
   attach(scene: SceneLike): void {
     this.scene = scene;
-    scene.cameras.main.setBackgroundColor("#e8f1f8");
+    scene.cameras.main.setBackgroundColor("#bfe8f5");
     const centerX = scene.scale.width / 2;
-    this.spanLabel = scene.add.text(centerX, 12, "", {
+    const fontSize = `${clamp(Math.round(scene.scale.width / 42), 12, 18)}px`;
+    const smallFontSize = `${clamp(Math.round(scene.scale.width / 48), 11, 15)}px`;
+    this.environmentLayer = scene.add.graphics?.() ?? null;
+    this.targetLayer = scene.add.graphics?.() ?? null;
+    this.pieceLayer = scene.add.graphics?.() ?? null;
+    this.effectLayer = scene.add.graphics?.() ?? null;
+    this.spanLabel = scene.add.text(centerX, 10, "", {
       fontFamily: "system-ui, sans-serif",
-      fontSize: "16px",
+      fontSize,
       fontStyle: "bold",
       color: "#102a43",
       align: "center",
     }).setOrigin(0.5, 0);
-    this.remainingLabel = scene.add.text(centerX, 39, "", {
+    this.remainingLabel = scene.add.text(centerX, 34, "", {
       fontFamily: "system-ui, sans-serif",
-      fontSize: "15px",
+      fontSize: smallFontSize,
       fontStyle: "bold",
       color: "#102a43",
       align: "center",
     }).setOrigin(0.5, 0);
-    this.feedbackLabel = scene.add.text(centerX, 64, "", {
+    this.feedbackLabel = scene.add.text(centerX, 56, "", {
       fontFamily: "system-ui, sans-serif",
-      fontSize: "15px",
+      fontSize: smallFontSize,
       fontStyle: "bold",
-      color: "#102a43",
+      color: "#38536a",
       align: "center",
     }).setOrigin(0.5, 0);
 
@@ -154,39 +272,40 @@ export class BridgeSceneController {
     const scene = this.scene;
     const cliff = vm.layout.cliffPx;
     const unitPx = vm.layout.unitPx;
-    const gapY = Math.max(120, scene.scale.height * 0.45);
+    const gapY = clamp(scene.scale.height * 0.43, 82, Math.max(82, scene.scale.height - 92));
     const gapX = cliff;
     const gapW = vm.span * unitPx;
-
     const centerX = scene.scale.width / 2;
-    this.spanLabel?.setPosition(centerX, 12).setText(`Target span: ${vm.spanLabel}`);
+
+    this.spanLabel?.setPosition(centerX, 10).setText(`Target span: ${vm.spanLabel}`);
     this.remainingLabel?.setText(
       vm.exact
         ? "Exact fit"
         : vm.overfill
           ? "Too long"
-          : `${formatScaled(vm.remainingSpan, vm.denominator)} units left · ${formatScaled(vm.filledUnits, vm.denominator)} filled`
+          : `${formatScaled(vm.remainingSpan, vm.denominator)} left · ${formatScaled(vm.filledUnits, vm.denominator)} filled`,
     );
-    this.remainingLabel?.setPosition(centerX, 39);
+    this.remainingLabel?.setPosition(centerX, 34);
     this.feedbackLabel?.setText(
       vm.exact
-        ? vm.reducedMotion
-          ? "Bridge complete · reduced motion"
-          : vm.crossing
-            ? "Crossing the bridge"
-            : "Bridge complete"
+        ? vm.crossing
+          ? "Crossing the bridge"
+          : "Bridge complete"
         : vm.incorrectSubmit
           ? "Check the fit details below"
-          : "Build to match the target span"
+          : vm.overfill
+            ? "That plank runs past the far anchor"
+            : "Build to match the target span",
     );
-    this.feedbackLabel?.setPosition(centerX, 64);
+    this.feedbackLabel?.setPosition(centerX, 56);
 
-    // Gap bed
+    this.drawEnvironment(scene.scale.width, scene.scale.height, gapX, gapY, gapW);
+    this.drawTarget(gapX, gapY, gapW, vm);
+
     this.gapRect?.destroy();
-    this.gapRect = scene.add
-      .rectangle(gapX + gapW / 2, gapY, gapW, 10, 0x7aa0b8, 0.35)
+    this.gapRect = scene.add.rectangle(gapX + gapW / 2, gapY, gapW, 48, COLORS.white, 0.01)
       .setData("role", "gap")
-      .setInteractive() as RectLike;
+      .setInteractive();
     this.gapRect.on?.("pointerup", () => {
       this.host.emitPointerEvent({
         phase: "up",
@@ -196,7 +315,7 @@ export class BridgeSceneController {
       });
     });
 
-    // Clear previous piece rects.
+    this.pieceLayer?.clear();
     for (const rect of this.trayRects.values()) rect.destroy();
     for (const rect of this.placedRects.values()) rect.destroy();
     for (const label of this.pieceLabels.values()) label.destroy();
@@ -206,42 +325,48 @@ export class BridgeSceneController {
 
     let cursor = gapX;
     for (const piece of vm.placed) {
-      const w = piece.widthPx;
-      const rect = scene.add.rectangle(cursor + w / 2, gapY, w, 28, 0x2f6fed, 1);
-      rect.setData("pieceId", piece.id);
-      rect.setData("role", "placed");
-      rect.setInteractive();
+      const width = Math.max(24, piece.widthPx);
+      drawPlank(this.pieceLayer ?? this.fallbackGraphics(), cursor, gapY, width, 30, {
+        placed: true,
+        overfill: vm.overfill,
+      });
+      const rect = this.createHitRect(scene, cursor + width / 2, gapY, width, 52, piece.id, "placed");
       this.placedRects.set(piece.id, rect);
       this.pieceLabels.set(
         piece.id,
-        scene.add.text(cursor + w / 2, gapY, this.pieceFace(piece.units, piece.label, piece.kind), {
+        scene.add.text(cursor + width / 2, gapY, this.pieceFace(piece.units, piece.label, piece.kind), {
           fontFamily: "system-ui, sans-serif",
-          fontSize: "14px",
+          fontSize: `${clamp(Math.round(width / 8), 11, 16)}px`,
           fontStyle: "bold",
-          color: "#ffffff",
+          color: "#102a43",
           align: "center",
         }).setOrigin(0.5, 0.5),
       );
-      cursor += w;
+      cursor += width;
     }
 
-    const trayStartY = Math.min(scene.scale.height - 84, gapY + 90);
-    const trayMargin = 24;
-    const trayRowHeight = 44;
+    this.effectLayer?.clear();
+    if (vm.overfill) {
+      this.drawOverfillState(gapX, gapY, gapW, vm);
+    }
+
+    const trayStartY = Math.min(scene.scale.height - 58, gapY + 92);
+    const trayMargin = Math.max(14, Math.round(scene.scale.width * 0.04));
+    const trayRowHeight = 56;
     const trayRight = scene.scale.width - trayMargin;
+    const maxVisualWidth = Math.max(56, trayRight - trayMargin);
     let trayX = trayMargin;
     let trayY = trayStartY;
     for (const piece of vm.pieceTray) {
-      const w = Math.min(trayRight - trayMargin, Math.max(48, piece.widthPx * 0.85));
-      if (trayX > trayMargin && trayX + w > trayRight) {
+      const visualWidth = Math.min(maxVisualWidth, Math.max(56, Math.round(piece.widthPx * 0.92)));
+      if (trayX > trayMargin && trayX + visualWidth > trayRight) {
         trayX = trayMargin;
         trayY += trayRowHeight;
       }
-      const color = piece.selected ? 0xf0a202 : 0x4caf7a;
-      const rect = scene.add.rectangle(trayX + w / 2, trayY, w, 32, color, 1);
-      rect.setData("pieceId", piece.id);
-      rect.setData("role", "tray");
-      rect.setInteractive();
+      const selected = piece.selected || piece.focused;
+      drawPlank(this.pieceLayer ?? this.fallbackGraphics(), trayX, trayY, visualWidth, 30, { selected });
+      const visualCenterX = trayX + visualWidth / 2;
+      const rect = this.createHitRect(scene, visualCenterX, trayY, visualWidth, 52, piece.id, "tray");
       rect.on?.("pointerdown", () => {
         this.host.emitPointerEvent({
           phase: "down",
@@ -253,28 +378,148 @@ export class BridgeSceneController {
       this.trayRects.set(piece.id, rect);
       this.pieceLabels.set(
         piece.id,
-        scene.add.text(trayX + w / 2, trayY, this.pieceFace(piece.units, piece.label, piece.kind), {
+        scene.add.text(visualCenterX, trayY, this.pieceFace(piece.units, piece.label, piece.kind), {
           fontFamily: "system-ui, sans-serif",
-          fontSize: "14px",
+          fontSize: `${clamp(Math.round(visualWidth / 8), 11, 16)}px`,
           fontStyle: "bold",
           color: "#102a43",
           align: "center",
         }).setOrigin(0.5, 0.5),
       );
-      trayX += w + 12;
+      trayX += visualWidth + 12;
     }
 
-    // Crossing is decorative and begins only after the engine has already
-    // produced exact=true. Reduced motion jumps directly to the far bank.
     this.successMarker?.destroy();
     this.successMarker = null;
     if (vm.success) {
-      const markerX =
-        vm.crossing && !vm.reducedMotion ? gapX + gapW / 2 : gapX + gapW + 18;
-      this.successMarker = scene.add
-        .rectangle(markerX, gapY - 28, 20, 12, 0x176b4d, 1)
-        .setData("role", "success-marker") as RectLike;
+      this.drawSuccessMarker(scene, gapX, gapY, gapW, vm);
     }
+  }
+
+  private createHitRect(
+    scene: SceneLike,
+    x: number,
+    y: number,
+    visualWidth: number,
+    hitHeight: number,
+    pieceId: string,
+    role: string,
+  ): RectLike {
+    const rect = scene.add.rectangle(x, y, visualWidth, hitHeight, COLORS.white, 0.01);
+    rect.setData("pieceId", pieceId);
+    rect.setData("role", role);
+    rect.setInteractive();
+    return rect;
+  }
+
+  private drawEnvironment(width: number, height: number, gapX: number, gapY: number, gapW: number): void {
+    const graphics = this.environmentLayer;
+    if (!graphics) return;
+    graphics.clear();
+    const waterY = Math.min(height, gapY + 50);
+    const cliffWidth = Math.max(gapX, width - (gapX + gapW));
+    const supportHeight = Math.max(18, Math.min(48, height * 0.16));
+    graphics
+      .fillStyle(COLORS.sky, 1)
+      .fillRect(0, 0, width, height)
+      .fillStyle(COLORS.cloud, 0.7)
+      .fillCircle(width * 0.18, height * 0.18, Math.max(12, width * 0.035))
+      .fillCircle(width * 0.24, height * 0.2, Math.max(8, width * 0.024))
+      .fillCircle(width * 0.82, height * 0.16, Math.max(10, width * 0.03))
+      .fillStyle(COLORS.water, 1)
+      .fillRect(0, waterY, width, height - waterY)
+      .lineStyle(2, COLORS.waterDeep, 0.45)
+      .lineBetween(0, waterY + 14, width, waterY + 14)
+      .lineBetween(0, waterY + 30, width, waterY + 30)
+      .fillStyle(COLORS.cliff, 1)
+      .fillRect(0, gapY - 54, gapX, height - gapY + 54)
+      .fillRect(gapX + gapW, gapY - 54, cliffWidth, height - gapY + 54)
+      .fillStyle(COLORS.cliffLight, 1)
+      .fillRect(0, gapY - 54, gapX, 10)
+      .fillRect(gapX + gapW, gapY - 54, cliffWidth, 10)
+      .fillStyle(COLORS.cliffShadow, 0.45)
+      .fillRect(Math.max(0, gapX - 12), gapY - 42, 12, height - gapY + 42)
+      .fillRect(gapX + gapW, gapY - 42, Math.min(12, cliffWidth), height - gapY + 42)
+      .lineStyle(2, COLORS.stone, 0.65)
+      .lineBetween(8, gapY - 26, Math.max(8, gapX - 10), gapY - 26)
+      .lineBetween(gapX + gapW + 10, gapY - 26, width - 8, gapY - 26)
+      .lineStyle(3, COLORS.stoneShadow, 0.8)
+      .lineBetween(10, gapY - 8, Math.max(10, gapX - 12), gapY - 8)
+      .lineBetween(gapX + gapW + 12, gapY - 8, width - 10, gapY - 8)
+      .fillStyle(COLORS.cliffShadow, 0.8)
+      .fillRect(gapX + 14, gapY + 14, 14, supportHeight)
+      .fillRect(gapX + gapW - 28, gapY + 14, 14, supportHeight)
+      .fillStyle(COLORS.stone, 1)
+      .fillRect(gapX + 11, gapY + 10, 20, 8)
+      .fillRect(gapX + gapW - 31, gapY + 10, 20, 8);
+  }
+
+  private drawTarget(gapX: number, gapY: number, gapW: number, vm: BridgeViewModel): void {
+    const graphics = this.targetLayer;
+    if (!graphics) return;
+    graphics.clear();
+    const stateColor = vm.exact ? COLORS.exact : vm.overfill ? COLORS.overfill : COLORS.target;
+    graphics
+      .fillStyle(stateColor, vm.exact ? 0.18 : 0.12)
+      .fillRect(gapX, gapY - 24, gapW, 48)
+      .lineStyle(vm.exact ? 4 : 3, stateColor, 0.95);
+    drawDashedLine(graphics, gapX, gapY - 24, gapX + gapW, gapY - 24, 10, 7);
+    drawDashedLine(graphics, gapX, gapY + 24, gapX + gapW, gapY + 24, 10, 7);
+    graphics
+      .lineBetween(gapX, gapY - 24, gapX, gapY + 24)
+      .lineBetween(gapX + gapW, gapY - 24, gapX + gapW, gapY + 24)
+      .fillStyle(stateColor, 1)
+      .fillCircle(gapX, gapY, 6)
+      .fillCircle(gapX + gapW, gapY, 6);
+  }
+
+  private drawOverfillState(gapX: number, gapY: number, gapW: number, vm: BridgeViewModel): void {
+    const graphics = this.effectLayer;
+    if (!graphics) return;
+    const excess = vm.remainingSpan < 0
+      ? Math.abs(vm.remainingSpan) * vm.layout.unitPx
+      : Math.min(42, gapW * 0.12);
+    const start = gapX + gapW;
+    graphics
+      .lineStyle(4, COLORS.overfill, 1)
+      .lineBetween(start, gapY - 30, start + excess, gapY - 30)
+      .lineBetween(start, gapY + 30, start + excess, gapY + 30)
+      .lineStyle(2, COLORS.overfill, 0.9)
+      .lineBetween(start + excess, gapY - 30, start + excess, gapY + 30);
+  }
+
+  private drawSuccessMarker(scene: SceneLike, gapX: number, gapY: number, gapW: number, vm: BridgeViewModel): void {
+    const markerStart = gapX + gapW / 2;
+    const markerEnd = gapX + gapW + Math.max(18, Math.min(34, scene.scale.width * 0.05));
+    const markerX = vm.crossing && !vm.reducedMotion ? markerStart : markerEnd;
+    this.successMarker = scene.add.rectangle(markerX, gapY - 38, 22, 12, COLORS.exact, 1);
+    this.successMarker.setData("role", "success-marker");
+    this.effectLayer
+      ?.lineStyle(3, COLORS.exact, 1)
+      .lineBetween(markerX + 9, gapY - 31, markerX + 9, gapY - 53)
+      .lineBetween(markerX + 9, gapY - 53, markerX + 20, gapY - 48);
+
+    if (vm.crossing && !vm.reducedMotion && scene.tweens?.add) {
+      scene.tweens.add({
+        targets: this.successMarker,
+        x: markerEnd,
+        duration: 600,
+        ease: "Sine.easeInOut",
+      });
+    }
+  }
+
+  private fallbackGraphics(): GraphicsLike {
+    return {
+      clear: () => this.fallbackGraphics(),
+      fillStyle: () => this.fallbackGraphics(),
+      fillRect: () => this.fallbackGraphics(),
+      fillCircle: () => this.fallbackGraphics(),
+      lineStyle: () => this.fallbackGraphics(),
+      lineBetween: () => this.fallbackGraphics(),
+      strokeRect: () => this.fallbackGraphics(),
+      destroy: () => undefined,
+    };
   }
 
   /**
@@ -288,7 +533,9 @@ export class BridgeSceneController {
         x: rect.x,
         y: rect.y,
         width: rect.width,
-        height: rect.height,
+        height: 30,
+        hitWidth: rect.width,
+        hitHeight: rect.height,
       })),
       gap: this.gapRect
         ? {
@@ -331,12 +578,9 @@ export class BridgeSceneController {
   }
 
   isOverGap(x: number, y: number): boolean {
-    const vm = this.viewModel;
-    if (!vm || !this.scene) return false;
-    const cliff = vm.layout.cliffPx;
-    const gapY = Math.max(120, this.scene.scale.height * 0.45);
-    const gapW = vm.span * vm.layout.unitPx;
-    return x >= cliff && x <= cliff + gapW && Math.abs(y - gapY) < 40;
+    const gap = this.getInteractionGeometry().gap;
+    if (!gap) return false;
+    return x >= gap.x && x <= gap.x + gap.width && Math.abs(y - gap.y) < 40;
   }
 
   private forwardPointer(phase: PointerPhase, rawPointer: unknown): void {
@@ -362,6 +606,9 @@ export class BridgeSceneController {
       this.scene.input.off("pointermove", this.onPointerMove);
       this.scene.input.off("pointerup", this.onPointerUp);
       this.scene.input.off("pointerupoutside", this.onPointerCancel);
+      if (this.scene.tweens?.killTweensOf && this.successMarker) {
+        this.scene.tweens.killTweensOf(this.successMarker);
+      }
     }
     this.gapRect?.destroy();
     this.successMarker?.destroy();
@@ -373,6 +620,14 @@ export class BridgeSceneController {
     this.trayRects.clear();
     this.placedRects.clear();
     this.pieceLabels.clear();
+    this.environmentLayer?.destroy();
+    this.targetLayer?.destroy();
+    this.pieceLayer?.destroy();
+    this.effectLayer?.destroy();
+    this.environmentLayer = null;
+    this.targetLayer = null;
+    this.pieceLayer = null;
+    this.effectLayer = null;
     this.spanLabel?.destroy();
     this.remainingLabel?.destroy();
     this.feedbackLabel?.destroy();

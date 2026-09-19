@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const FIXTURE =
   "http://127.0.0.1:4173/tests/fixtures/phaser-render/index.html";
-const EXPECTED_RGB = { red: 47, green: 111, blue: 237 };
+const EXPECTED_RGB = { red: 185, green: 124, blue: 64 };
 
 type Diagnostics = {
   phaserVersion: string;
@@ -111,7 +111,7 @@ test("actual installed Phaser renders deterministic placed piece", async ({
 
   const pixel = await samplePixel(page);
   console.log("GAME166_PIXEL", JSON.stringify(pixel));
-  expect(pixel, "GAME166_RENDER_ORACLE expected the blue placed-piece pixel").toMatchObject(EXPECTED_RGB);
+  expect(pixel, "GAME166_RENDER_ORACLE expected the wood placed-piece pixel").toMatchObject(EXPECTED_RGB);
 
   const finalDiagnostics = await page.evaluate(() => {
     const harness = (window as typeof window & {
