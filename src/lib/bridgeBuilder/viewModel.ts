@@ -172,8 +172,8 @@ export interface DeriveBridgeViewModelOptions {
 }
 
 function responsiveBucket(width: number): BridgeResponsiveBucket {
-  if (width < 600) return "phone";
-  if (width < 960) return "tablet";
+  if (width <= 640) return "phone";
+  if (width <= 1024) return "tablet";
   return "desktop";
 }
 

@@ -44,6 +44,7 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
   private disposed = false;
   private reducedMotion = false;
   private muted = false;
+  private paused = false;
   private lastRenderedSignature: string | null = null;
   private inputState: InputNormalizerState | null = null;
 
@@ -105,6 +106,7 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
       this.muted = current.flags.mute;
       this.lastRenderedSignature = renderSignature(current);
       handle.reconcile(current);
+      if (this.paused) handle.pause();
       options.onStatusChange?.("ready");
     } catch (error) {
       if (!this.disposed) options.onStatusChange?.("failed");
@@ -150,8 +152,6 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
   }
 
   setMuted(muted: boolean): void {
-    // Phaser audio is disabled for this qualification slice; the state is still
-    // explicit at the port so a future approved cue layer has one control path.
     this.muted = muted;
     if (this.viewModel && this.viewModel.flags.mute !== muted) {
       this.viewModel = {
@@ -159,6 +159,17 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
         flags: { ...this.viewModel.flags, mute: muted },
       };
       this.reconcileIfChanged();
+    }
+  }
+
+  setPaused(paused: boolean): void {
+    const changed = this.paused !== paused;
+    this.paused = paused;
+    if (!this.game || !changed) return;
+    if (paused) {
+      this.game.pause();
+    } else {
+      this.game.resume();
     }
   }
 
@@ -201,6 +212,7 @@ export class PhaserBridgeRendererPort implements BridgeRendererPort {
     this.viewModel = null;
     this.lastRenderedSignature = null;
     this.inputState = null;
+    this.paused = false;
     this.options = null;
     this.listeners.clear();
   }

@@ -13,12 +13,12 @@ export default function App() {
         style={game132 ? { maxWidth: 1120 } : undefined}
       >
         <header className="page-copy">
-          <p className="eyebrow">Standalone qualification build</p>
+          <p className="eyebrow">Bridge Builder</p>
           <h1>Bridge Builder</h1>
           <p>
             {game132
-              ? "GAME-132 qualification slice: compose exact lengths through the Phaser presentation while the TypeScript engine remains the sole correctness authority."
-              : "A candidate build for games-site qualification. This remains independent from LevelBest until the approval gates are complete."}
+              ? "Build each bridge to fit its span exactly."
+              : "Choose planks, close the gap, and build each bridge to fit exactly."}
           </p>
         </header>
         <section aria-label="Bridge Builder game" className="demo-panel">

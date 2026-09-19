@@ -63,7 +63,7 @@ jobs:
             echo "::error::Negative control unexpectedly passed; the render oracle did not detect the omitted placed piece."
             exit 1
           fi
-          if ! grep -Fq "GAME166_RENDER_ORACLE expected the blue placed-piece pixel" /tmp/game166-negative.log; then
+          if ! grep -Fq "GAME166_RENDER_ORACLE expected the wood placed-piece pixel" /tmp/game166-negative.log; then
             echo "::error::Negative control failed for an unexpected reason."
             exit 1
           fi

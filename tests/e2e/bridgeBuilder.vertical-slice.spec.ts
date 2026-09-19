@@ -61,7 +61,7 @@ test.describe("Bridge Builder qualification vertical slice", () => {
     expect(canvasPixels.context).toBe(true);
   });
 
-  test("setup defaults to numerals and offers the optional g12 dot face", async ({ page }) => {
+  test("setup defaults to numerals and offers a dot display", async ({ page }) => {
     await page.reload();
     await expect(page.getByTestId("setup-numerals")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("setup-dots")).toHaveAttribute("aria-pressed", "false");
@@ -69,6 +69,44 @@ test.describe("Bridge Builder qualification vertical slice", () => {
     await page.getByTestId("bridge-start").click();
     await expect(page.getByTestId("piece-plank-4").getByTestId("dot-face")).toBeVisible();
     await expect(page.getByTestId("piece-plank-4")).toHaveAttribute("aria-label", "4 units plank");
+  });
+
+  test("player surface hides qualification language and exposes visual state", async ({ page }) => {
+    const bodyText = await page.locator("body").innerText();
+    expect(bodyText).not.toContain("Standalone qualification");
+    expect(bodyText).not.toContain("Qualification vertical slice");
+    expect(bodyText).not.toContain("Early bridge math");
+    expect(bodyText).not.toContain("host return handshake");
+
+    await page.getByTestId("piece-plank-4").click();
+    await page.getByTestId("bridge-open-slot").click();
+    await expect(page.getByTestId("bridge-dom-mirror")).toHaveAttribute("data-verdict", "underfill");
+    await expect(page.getByTestId("bridge-builder-candidate")).toHaveAttribute("data-responsive", /^(tablet|desktop)$/);
+  });
+
+  test("pause uses honest player copy and freezes the Phaser surface", async ({ page }) => {
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Paused — the clock is waiting." })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Game paused" })).toContainText("Up to 60 seconds of pause.");
+    await expect(page.getByTestId("bridge-phaser-canvas-host")).toHaveAttribute("data-paused", "true");
+    await page.getByRole("button", { name: "Resume bridge", exact: true }).click();
+    await expect(page.getByTestId("bridge-phaser-canvas-host")).toHaveAttribute("data-paused", "false");
+  });
+
+  test("keeps the board readable on a phone-sized viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await page.getByTestId("bridge-start").click();
+    await expect(page.getByText("Canvas ready", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("bridge-builder-candidate")).toHaveAttribute("data-responsive", "phone");
+    const dimensions = await page.evaluate(() => ({
+      bodyWidth: document.body.scrollWidth,
+      viewportWidth: document.documentElement.clientWidth,
+      canvasWidth: document.querySelector("[data-testid=bridge-phaser-canvas-host]")?.getBoundingClientRect().width ?? 0,
+    }));
+    expect(dimensions.bodyWidth).toBe(dimensions.viewportWidth);
+    expect(dimensions.canvasWidth).toBeGreaterThanOrEqual(280);
+    await expect(page.getByTestId("bridge-open-slot")).toHaveJSProperty("disabled", false);
   });
 
   test("supports underfill, submit, retry, and undo", async ({ page }) => {

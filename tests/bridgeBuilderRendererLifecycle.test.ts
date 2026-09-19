@@ -146,6 +146,10 @@ describe("GAME-294 renderer lifecycle", () => {
     expect(handle.reconcile).toHaveBeenLastCalledWith(
       expect.objectContaining({ flags: expect.objectContaining({ mute: true }) }),
     );
+    port.setPaused(true);
+    expect(handle.pause).toHaveBeenCalledTimes(1);
+    port.setPaused(false);
+    expect(handle.resume).toHaveBeenCalledTimes(1);
 
     port.dispose();
     port.dispose();
