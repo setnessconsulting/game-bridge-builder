@@ -4,22 +4,22 @@
 
 **Candidate status:** `candidate-not-approved`
 
-**Current candidate:** `0.1.0-qualification.7` — published to private R2 and hosted for qualification only
+**Current candidate:** `0.1.0-qualification.8` — published to private R2 and hosted for qualification only
 
-**Candidate source commit:** `8d83136330a99fca6832af0bf2a99fa6e642a93a` (merge includes GAME-297 visual polish and the CI render-oracle fix)
+**Candidate source commit:** `e1f9f11c2a2df62e408562e9f217a37e2347859f` (merge includes GAME-297 visual polish, the CI render-oracle fix, and the ESLint 10 cleanup)
 
-**CI evidence:** [candidate build and publish run 35465851351](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35465851351); PR checks also passed after the hosted-test assertion maintenance merge.
+**CI evidence:** [candidate build and publish run 35467637006](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35467637006); PR checks also passed for the source and workflow maintenance merges.
 
 **Owner decisions:** O-1 through O-8 were approved as policy decisions on 2026-09-17. The `GAME-294` renderer-contract and `GAME-295` curriculum-supply implementations are present on the Wave 2 branch and pass their automated checks; Jira review/closeout is still open. Their proposed thresholds remain proposed, not ratified. O-7 executors and dates remain open.
 
 This record distinguishes engineering checks from hosted, owner, and human-gated release evidence. It does not promote the games-site catalog and does not authorize LevelBest integration.
 
-## Current candidate checks — candidate `.7`
+## Current candidate checks — candidate `.8`
 
-- Candidate `.7` incorporates GAME-297's visual polish pass: procedural bridge environment, wood-style planks, explicit target-span feedback, Phaser/DOM visual parity, responsive layout, player-facing copy cleanup, success crossing/audio cues, honest pause messaging, and reduced-motion handling. Gameplay math, intent authority, and the independent `/?game132=1` route remain unchanged.
-- The candidate workflow passed typecheck, unit tests, full E2E, release build, release-manifest check, and the real Phaser/SwiftShader render lane before publishing. The immutable R2 upload completed under `bridge-builder/0.1.0-qualification.7/`; the manifest records source commit `8d83136330a99fca6832af0bf2a99fa6e642a93a` and remains `candidate-not-approved`.
-- The hosted Chromium journey passed (**1 passed**) on 2026-09-19 against the live preview. It loaded the pinned `.7` iframe, reached `Canvas ready`, completed an exact-fit placement, and verified the manifest plus every listed asset's status, content type, immutable cache header, byte count, and SHA-256.
-- The games-site preview branch `codex/bridge-builder-preview-qualification-5` pinned `.7` in commit `4e65ec3`; the active preview is [Bridge Builder play route](https://1a9703ca.games-site-7pn.pages.dev/bridge-builder/play/). Games-site catalog validation, lint, Astro checks, functions checks, 11 tests, and build passed; the repository-wide Prettier check still reports 29 unrelated files.
+- Candidate `.8` incorporates GAME-297's visual polish pass: procedural bridge environment, wood-style planks, explicit target-span feedback, Phaser/DOM visual parity, responsive layout, player-facing copy cleanup, success crossing/audio cues, honest pause messaging, and reduced-motion handling. Gameplay math, intent authority, and the independent `/?game132=1` route remain unchanged. The source also upgrades the deprecated ESLint 9 toolchain and keeps the semantic projection lint-clean.
+- The candidate workflow passed typecheck, unit tests, full E2E, release build, release-manifest check, and the real Phaser/SwiftShader render lane before publishing. The immutable R2 upload completed under `bridge-builder/0.1.0-qualification.8/`; the manifest records source commit `e1f9f11c2a2df62e408562e9f217a37e2347859f` and remains `candidate-not-approved`.
+- The hosted Chromium journey passed (**1 passed**) on 2026-09-19 against the live preview. It loaded the pinned `.8` iframe, reached `Canvas ready`, completed an exact-fit placement, and verified the manifest plus every listed asset's status, content type, immutable cache header, byte count, and SHA-256.
+- The games-site preview branch `codex/bridge-builder-preview-qualification-5` pinned `.8` in commit `432b6e7`; the active preview is [Bridge Builder play route](https://4be3c47e.games-site-7pn.pages.dev/bridge-builder/play/). Games-site catalog validation, lint, format check, Astro checks, functions checks, 11 tests, and build passed.
 - Production remains unchanged and Bridge Builder remains `Coming soon`. Named human approval gates, real-device evidence, performance-budget ratification, and promotion remain pending.
 
 ## Historical Wave 1 checks — candidate `.2`
@@ -50,7 +50,7 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
 
 ## Hosting and promotion boundary
 
-- Historical `.4` hosted preview: [Bridge Builder play route](https://83cdd01b.games-site-7pn.pages.dev/bridge-builder/play/) from branch `codex/bridge-builder-wave2-preview`, source `be4078a`. The current `.7` preview is recorded above; the prior `.3` preview remains at [its versioned route](https://b2de4a6f.games-site-7pn.pages.dev/bridge-builder/play/).
+- Historical `.4` hosted preview: [Bridge Builder play route](https://83cdd01b.games-site-7pn.pages.dev/bridge-builder/play/) from branch `codex/bridge-builder-wave2-preview`, source `be4078a`. The current `.8` preview is recorded above; the prior `.3` preview remains at [its versioned route](https://b2de4a6f.games-site-7pn.pages.dev/bridge-builder/play/).
 - The hosted Chromium journey passes against the actual `.4` iframe: the frame pins the exact version, creates a real Phaser canvas after Start, shows the DOM mirror, completes an exact-fit round, reads the candidate manifest, and verifies every listed asset. The entry and assets return `200` with immutable cache metadata. The separate GitHub SwiftShader lane verifies actual Phaser WebGL rendering and its negative control.
 - The manifest's hosted-preview field was pending when the immutable artifact was created; the dated post-upload hosted test result is recorded here, not written back into the versioned manifest.
 - Production [Bridge Builder page](https://games.setnessconsulting.com/bridge-builder/) remains `Coming soon`; a read-only check of the production play route found no iframe and no `.4` pointer. Production is still on `main` source `119bf51`; LevelBest has not been changed.
