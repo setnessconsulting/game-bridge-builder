@@ -4,7 +4,13 @@
  */
 
 import type { BridgeViewModel } from "../viewModel";
-import { BridgeSceneController, BRIDGE_SCENE_KEY, type BridgeSceneHost } from "./BridgeScene";
+import carSpriteUrl from "@/assets/bridge-builder/car-sprite.png";
+import {
+  BridgeSceneController,
+  BRIDGE_CAR_TEXTURE_KEY,
+  BRIDGE_SCENE_KEY,
+  type BridgeSceneHost,
+} from "./BridgeScene";
 
 export interface BridgeGameHandle {
   game: { destroy: (removeCanvas?: boolean) => void } | null;
@@ -22,6 +28,10 @@ export interface CreateBridgeGameOptions {
   width: number;
   height: number;
   host: BridgeSceneHost;
+  /** Optional override for deterministic renderer fixtures. */
+  carTextureUrl?: string;
+  /** Logical canvas resolution multiplier; defaults to the display DPR. */
+  resolution?: number;
   /** Injected Phaser module for tests; production passes dynamic import. */
   PhaserModule?: PhaserModuleLike;
 }
@@ -104,7 +114,23 @@ export async function createBridgeGame(
         setPosition: (x: number, y: number) => unknown;
         destroy: () => void;
       };
+      image: (
+        x: number,
+        y: number,
+        key: string,
+      ) => {
+        setPosition: (x: number, y: number) => unknown;
+        setDisplaySize: (w: number, h: number) => unknown;
+        setOrigin: (x: number, y: number) => unknown;
+        setAlpha: (alpha: number) => unknown;
+        setRotation: (rotation: number) => unknown;
+        setDepth: (depth: number) => unknown;
+        destroy: () => void;
+        x: number;
+        y: number;
+      };
     };
+    load!: { image: (key: string, url: string) => void };
     input!: {
       on: (event: string, fn: (...args: unknown[]) => void) => void;
       off: (event: string, fn: (...args: unknown[]) => void) => void;
@@ -114,6 +140,10 @@ export async function createBridgeGame(
 
     constructor() {
       super({ key: BRIDGE_SCENE_KEY });
+    }
+
+    preload(): void {
+      this.load.image(BRIDGE_CAR_TEXTURE_KEY, options.carTextureUrl ?? carSpriteUrl);
     }
 
     create(): void {
@@ -127,6 +157,14 @@ export async function createBridgeGame(
     parent: options.parent,
     width: options.width,
     height: options.height,
+    resolution: Math.min(
+      2,
+      Math.max(
+        1,
+        options.resolution ??
+          (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1),
+      ),
+    ),
     backgroundColor: "#e8f1f8",
     scene: [HostedBridgeScene],
     banner: false,

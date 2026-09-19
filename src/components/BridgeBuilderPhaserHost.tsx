@@ -353,12 +353,19 @@ export default function BridgeBuilderPhaserHost({
               key={piece.id}
               type="button"
               aria-pressed={session.selectedPieceId === piece.id}
-              onClick={(event) =>
-                handleDirect(activationSource(event), {
+              onClick={(event) => {
+                const source = activationSource(event);
+                handleDirect(source, {
                   type: "selectPiece",
                   pieceId: piece.id,
-                })
-              }
+                });
+                if (source === "tap") {
+                  handleDirect(source, {
+                    type: "placePiece",
+                    pieceId: piece.id,
+                  });
+                }
+              }}
             >
               {piece.label} ({piece.units} units)
             </button>

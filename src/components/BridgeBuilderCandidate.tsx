@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, DragEvent, KeyboardEvent } from "react";
+import type { CSSProperties, DragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import {
   advanceBridgeClock,
   applyBridgeHostSignal,
@@ -29,7 +29,8 @@ import { formatScaled } from "@/lib/bridgeBuilder/format";
 import { createQualificationRound } from "@/lib/bridgeBuilder/qualificationRound";
 import { closeBridgeSoundContext, playBridgeCue } from "@/lib/bridgeBuilder/sound";
 import type { BridgePuzzle, Piece } from "@/lib/bridgeBuilder/types";
-import { deriveBridgeViewModel, type BridgeNumberFace } from "@/lib/bridgeBuilder/viewModel";
+import carSpriteUrl from "@/assets/bridge-builder/car-sprite.png";
+import { deriveBridgeViewModel, type BridgeNumberFace, type BridgeViewModel } from "@/lib/bridgeBuilder/viewModel";
 import BridgeCanvas from "./BridgeCanvas";
 
 function lastPlaced(state: BridgeSessionState): Piece | undefined {
@@ -40,14 +41,14 @@ function feedbackFor(state: BridgeSessionState): string {
   if (state.phase === "exact") return "Exact fit. The crossing is ready.";
   if (state.phase === "incorrectSubmit") {
     return state.lastOutcome?.status === "partial"
-      ? `Still short by ${Math.abs(state.lastOutcome.diff)} units.`
-      : `Too long by ${Math.abs(state.lastOutcome?.diff ?? 0)} units.`;
+      ? `Still short by ${Math.abs(state.lastOutcome.diff)} units. The car is stuck at the unfinished bridge.`
+      : `Too long by ${Math.abs(state.lastOutcome?.diff ?? 0)} units. The car slips into the water.`;
   }
   if (state.lastOutcome?.status === "overhang") {
-    return `Too long by ${Math.abs(state.lastOutcome.diff)} units. Choose another plank.`;
+    return `Too long by ${Math.abs(state.lastOutcome.diff)} units. The car slips into the water. Choose a shorter plank.`;
   }
   if (state.lastOutcome?.status === "partial") {
-    return `Placed. ${state.puzzle.gapUnits - state.lastOutcome.filledAfter} units remain.`;
+    return `Placed. ${state.puzzle.gapUnits - state.lastOutcome.filledAfter} units remain. Add another plank.`;
   }
   return "Choose a plank, then place it in the open span.";
 }
@@ -79,6 +80,14 @@ function questionText(puzzle: BridgePuzzle, bridgeNumber: number): string {
     ? `Finish the ${target} by filling the missing amount.`
     : `Build the ${target} using the planks.`;
   return `Bridge ${bridgeNumber}: ${instruction}`;
+}
+
+function vehicleState(viewModel: BridgeViewModel): "ready" | "crossing" | "parked" | "stuck" | "falling" {
+  if (viewModel.overfill) return "falling";
+  if (viewModel.incorrectSubmit && viewModel.verdict === "underfill") return "stuck";
+  if (viewModel.crossing) return "crossing";
+  if (viewModel.exact) return "parked";
+  return "ready";
 }
 
 function PieceFace({
@@ -415,6 +424,17 @@ export default function BridgeBuilderCandidate() {
     }
   }
 
+  function handlePieceActivation(pieceId: string, event: ReactMouseEvent<HTMLButtonElement>) {
+    if (event.detail === 0) {
+      dispatchAction({ type: "selectPiece", pieceId });
+      return;
+    }
+    dispatchSequence([
+      { type: "selectPiece", pieceId },
+      { type: "placePiece", pieceId },
+    ]);
+  }
+
   function beginRound() {
     setClock(createBridgeClock({ nowMs: performance.now() }));
     setPaused(false);
@@ -448,6 +468,7 @@ export default function BridgeBuilderCandidate() {
   const bridgeStyle = {
     "--bb-span-width": `${Math.max(240, viewModel.span * viewModel.layout.unitPx)}px`,
   } as CSSProperties;
+  const currentVehicleState = vehicleState(viewModel);
 
   return (
     <div
@@ -580,6 +601,7 @@ export default function BridgeBuilderCandidate() {
                 The gap needs <strong>{targetSpanLabel(session.puzzle)}</strong>. You have filled <strong>{viewModel.filledUnits}</strong>.
                 {viewModel.remainingSpan > 0 ? ` ${viewModel.remainingSpan} units remain.` : " The span is closed."}
               </p>
+              <p className="bb-input-hint">Click a plank to add it. Dragging to the open span also works.</p>
 
               <div
                 className={`bb-candidate-bridge ${viewModel.exact ? "is-exact" : ""} ${viewModel.overfill ? "is-over" : ""}`}
@@ -588,6 +610,16 @@ export default function BridgeBuilderCandidate() {
                 role="group"
                 aria-label="Bridge span"
               >
+                <span className="bb-candidate-bank bb-candidate-bank-left" aria-hidden="true" />
+                <span className="bb-candidate-bank bb-candidate-bank-right" aria-hidden="true" />
+                <span
+                  className={`bb-candidate-vehicle bb-vehicle-${currentVehicleState}`}
+                  data-testid="bridge-vehicle"
+                  data-state={currentVehicleState}
+                  aria-hidden="true"
+                >
+                  <img src={carSpriteUrl} alt="" />
+                </span>
                 {viewModel.placed.map((piece) => (
                   <button
                     key={piece.id}
@@ -605,7 +637,7 @@ export default function BridgeBuilderCandidate() {
                   type="button"
                   className={`bb-candidate-open-slot ${viewModel.overfill ? "is-over" : ""} ${viewModel.exact ? "is-exact" : ""}`}
                   data-testid="bridge-open-slot"
-                  aria-label={selectedPiece ? `Place ${pieceLabel(selectedPiece)} in the open span` : "Open span; select a plank first"}
+                  aria-label={selectedPiece ? `Place ${pieceLabel(selectedPiece)} in the open span` : "Open span; click a plank to add it"}
                   disabled={!viewModel.capabilities.canPlace}
                   onClick={() => selectedPiece && dispatchAction({ type: "placePiece", pieceId: selectedPiece.id })}
                   onDragOver={(event) => event.preventDefault()}
@@ -629,7 +661,7 @@ export default function BridgeBuilderCandidate() {
                     disabled={expired}
                     aria-label={pieceLabel(piece)}
                     aria-pressed={piece.selected}
-                    onClick={() => dispatchAction({ type: "selectPiece", pieceId: piece.id })}
+                    onClick={(event) => handlePieceActivation(piece.id, event)}
                     onDragStart={(event) => event.dataTransfer.setData("text/plain", piece.id)}
                   >
                     <span className="bb-piece-grain" aria-hidden="true"></span>

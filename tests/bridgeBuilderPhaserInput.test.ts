@@ -37,7 +37,28 @@ describe("GAME-131 Phaser input normalization", () => {
     expect(result.state.draggingPieceId).toBeNull();
   });
 
-  it("treats tap-select then tap-gap as place without drag", () => {
+  it("places a piece when a tray tap ends on the same piece", () => {
+    let state = createInputNormalizerState(null, 2);
+    let result = normalizePointerEvent(state, {
+      phase: "down",
+      targetPieceId: "a",
+      overGap: false,
+      generation: 2,
+    });
+    expect(result.intents).toEqual([{ type: "selectPiece", pieceId: "a" }]);
+    state = result.state;
+
+    result = normalizePointerEvent(state, {
+      phase: "up",
+      targetPieceId: "a",
+      overGap: false,
+      generation: 2,
+    });
+    expect(result.intents).toEqual([{ type: "placePiece", pieceId: "a" }]);
+    expect(result.state.selectedPieceId).toBeNull();
+  });
+
+  it("treats a selected piece followed by a gap tap as place without drag", () => {
     const state = createInputNormalizerState("a", 2);
     const result = normalizePointerEvent(state, {
       phase: "up",

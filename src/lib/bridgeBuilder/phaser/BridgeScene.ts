@@ -8,12 +8,14 @@ import type { BridgeViewModel } from "../viewModel";
 import { formatScaled } from "../format";
 
 export const BRIDGE_SCENE_KEY = "BridgeScene";
+export const BRIDGE_CAR_TEXTURE_KEY = "bridge-builder-car";
 
 const COLORS = {
   sky: 0xbfe8f5,
   cloud: 0xeaf8fb,
   water: 0x3f9ab2,
   waterDeep: 0x2b708c,
+  waterLight: 0x75c9d2,
   cliff: 0xa76645,
   cliffLight: 0xc58a5f,
   cliffShadow: 0x74402f,
@@ -84,6 +86,18 @@ type TextLike = {
   destroy: () => void;
 };
 
+type ImageLike = {
+  setPosition: (x: number, y: number) => ImageLike;
+  setDisplaySize: (w: number, h: number) => ImageLike;
+  setOrigin?: (x: number, y: number) => ImageLike;
+  setAlpha?: (alpha: number) => ImageLike;
+  setRotation?: (rotation: number) => ImageLike;
+  setDepth?: (depth: number) => ImageLike;
+  destroy: () => void;
+  x: number;
+  y: number;
+};
+
 type SceneLike = {
   add: {
     rectangle: (
@@ -100,6 +114,7 @@ type SceneLike = {
       text: string,
       style?: Record<string, unknown>
     ) => TextLike;
+    image?: (x: number, y: number, key: string) => ImageLike;
     graphics?: () => GraphicsLike;
   };
   input: {
@@ -203,6 +218,8 @@ export class BridgeSceneController {
   private spanLabel: TextLike | null = null;
   private remainingLabel: TextLike | null = null;
   private feedbackLabel: TextLike | null = null;
+  private carSprite: ImageLike | null = null;
+  private carSignature: string | null = null;
   private destroyed = false;
 
   private readonly onPointerMove = (...args: unknown[]) => {
@@ -292,9 +309,11 @@ export class BridgeSceneController {
           ? "Crossing the bridge"
           : "Bridge complete"
         : vm.incorrectSubmit
-          ? "Check the fit details below"
+          ? vm.verdict === "underfill"
+            ? "The car is stuck at the unfinished bridge"
+            : "The car slipped into the water"
           : vm.overfill
-            ? "That plank runs past the far anchor"
+            ? "The car slipped into the water"
             : "Build to match the target span",
     );
     this.feedbackLabel?.setPosition(centerX, 56);
@@ -394,6 +413,7 @@ export class BridgeSceneController {
     if (vm.success) {
       this.drawSuccessMarker(scene, gapX, gapY, gapW, vm);
     }
+    this.drawCar(scene, gapX, gapY, gapW, vm);
   }
 
   private createHitRect(
@@ -416,9 +436,12 @@ export class BridgeSceneController {
     const graphics = this.environmentLayer;
     if (!graphics) return;
     graphics.clear();
-    const waterY = Math.min(height, gapY + 50);
+    const waterY = this.waterLineY(height, gapY);
+    const bankTop = gapY - 54;
+    const bankBottom = Math.min(height, waterY + 18);
+    const bankHeight = Math.max(20, bankBottom - bankTop);
     const cliffWidth = Math.max(gapX, width - (gapX + gapW));
-    const supportHeight = Math.max(18, Math.min(48, height * 0.16));
+    const supportHeight = Math.max(28, Math.min(72, height * 0.22));
     graphics
       .fillStyle(COLORS.sky, 1)
       .fillRect(0, 0, width, height)
@@ -428,30 +451,44 @@ export class BridgeSceneController {
       .fillCircle(width * 0.82, height * 0.16, Math.max(10, width * 0.03))
       .fillStyle(COLORS.water, 1)
       .fillRect(0, waterY, width, height - waterY)
-      .lineStyle(2, COLORS.waterDeep, 0.45)
-      .lineBetween(0, waterY + 14, width, waterY + 14)
-      .lineBetween(0, waterY + 30, width, waterY + 30)
+      .fillStyle(COLORS.waterDeep, 0.16)
+      .fillRect(0, waterY + height * 0.2, width, height * 0.18)
+      .lineStyle(2, COLORS.waterLight, 0.62)
+      .lineBetween(0, waterY + 12, width, waterY + 12)
+      .lineBetween(width * 0.08, waterY + 36, width * 0.46, waterY + 36)
+      .lineBetween(width * 0.62, waterY + 48, width * 0.94, waterY + 48)
+      .lineStyle(1, COLORS.waterDeep, 0.52)
+      .lineBetween(width * 0.18, waterY + 68, width * 0.76, waterY + 68)
+      .lineBetween(width * 0.02, waterY + 92, width * 0.3, waterY + 92)
+      .lineBetween(width * 0.52, waterY + 108, width * 0.9, waterY + 108)
       .fillStyle(COLORS.cliff, 1)
-      .fillRect(0, gapY - 54, gapX, height - gapY + 54)
-      .fillRect(gapX + gapW, gapY - 54, cliffWidth, height - gapY + 54)
+      .fillRect(0, bankTop, gapX, bankHeight)
+      .fillRect(gapX + gapW, bankTop, cliffWidth, bankHeight)
       .fillStyle(COLORS.cliffLight, 1)
-      .fillRect(0, gapY - 54, gapX, 10)
-      .fillRect(gapX + gapW, gapY - 54, cliffWidth, 10)
+      .fillRect(0, bankTop, gapX, 10)
+      .fillRect(gapX + gapW, bankTop, cliffWidth, 10)
       .fillStyle(COLORS.cliffShadow, 0.45)
-      .fillRect(Math.max(0, gapX - 12), gapY - 42, 12, height - gapY + 42)
-      .fillRect(gapX + gapW, gapY - 42, Math.min(12, cliffWidth), height - gapY + 42)
+      .fillRect(Math.max(0, gapX - 12), gapY - 42, 12, bankBottom - gapY + 42)
+      .fillRect(gapX + gapW, gapY - 42, Math.min(12, cliffWidth), bankBottom - gapY + 42)
       .lineStyle(2, COLORS.stone, 0.65)
       .lineBetween(8, gapY - 26, Math.max(8, gapX - 10), gapY - 26)
       .lineBetween(gapX + gapW + 10, gapY - 26, width - 8, gapY - 26)
       .lineStyle(3, COLORS.stoneShadow, 0.8)
       .lineBetween(10, gapY - 8, Math.max(10, gapX - 12), gapY - 8)
       .lineBetween(gapX + gapW + 12, gapY - 8, width - 10, gapY - 8)
+      .lineStyle(3, COLORS.waterDeep, 0.8)
+      .lineBetween(0, waterY, Math.max(0, gapX - 6), waterY)
+      .lineBetween(gapX + gapW + 6, waterY, width, waterY)
       .fillStyle(COLORS.cliffShadow, 0.8)
       .fillRect(gapX + 14, gapY + 14, 14, supportHeight)
       .fillRect(gapX + gapW - 28, gapY + 14, 14, supportHeight)
       .fillStyle(COLORS.stone, 1)
       .fillRect(gapX + 11, gapY + 10, 20, 8)
       .fillRect(gapX + gapW - 31, gapY + 10, 20, 8);
+  }
+
+  private waterLineY(height: number, gapY: number): number {
+    return clamp(gapY + Math.max(34, height * 0.1), 116, Math.max(116, height - 34));
   }
 
   private drawTarget(gapX: number, gapY: number, gapW: number, vm: BridgeViewModel): void {
@@ -506,6 +543,91 @@ export class BridgeSceneController {
         duration: 600,
         ease: "Sine.easeInOut",
       });
+    }
+  }
+
+  private drawCar(scene: SceneLike, gapX: number, gapY: number, gapW: number, vm: BridgeViewModel): void {
+    const car = this.carSprite ?? (scene.add.image ? scene.add.image(0, 0, BRIDGE_CAR_TEXTURE_KEY) : null);
+    if (!car) return;
+    if (!this.carSprite) {
+      this.carSprite = car;
+      car.setOrigin?.(0.5, 1);
+      car.setDepth?.(8);
+    }
+
+    const carWidth = clamp(scene.scale.width * 0.16, 82, 136);
+    const carHeight = carWidth * 0.565;
+    // Keep the sprite's wheels on the bridge lip without covering the target
+    // plank in the static render. Crossing and failure tweens move it from
+    // this presentation pose.
+    const baseline = gapY - 4;
+    const waterY = this.waterLineY(scene.scale.height, gapY);
+    const startX = Math.max(28, gapX - carWidth * 0.28);
+    const parkedX = Math.min(scene.scale.width - carWidth * 0.48, gapX + gapW + carWidth * 0.32);
+    const filledPx = clamp(Math.max(0, vm.filledUnits) * vm.layout.unitPx, 0, gapW);
+    const stuckX = clamp(gapX + filledPx - carWidth * 0.2, startX, gapX + gapW - carWidth * 0.18);
+    const fallX = gapX + gapW * 0.68;
+    const mode = vm.overfill
+      ? "falling"
+      : vm.incorrectSubmit && vm.verdict === "underfill"
+        ? "stuck"
+        : vm.crossing
+          ? "crossing"
+          : vm.exact
+            ? "parked"
+            : "ready";
+    const signature = `${vm.puzzleId}:${vm.presentationGeneration}:${mode}:${vm.filledUnits}:${vm.lastPlacementStatus}`;
+
+    car.setDisplaySize(carWidth, carHeight);
+    if (signature === this.carSignature) return;
+    this.carSignature = signature;
+    if (scene.tweens?.killTweensOf) scene.tweens.killTweensOf(car);
+    car.setAlpha?.(1);
+    car.setRotation?.(0);
+
+    if (mode === "crossing" && !vm.reducedMotion && scene.tweens?.add) {
+      car.setPosition(startX, baseline);
+      scene.tweens.add({
+        targets: car,
+        x: parkedX,
+        y: baseline - 3,
+        duration: 720,
+        ease: "Sine.easeInOut",
+      });
+      return;
+    }
+    if (mode === "falling" && !vm.reducedMotion && scene.tweens?.add) {
+      car.setPosition(Math.max(startX, fallX - carWidth * 0.4), baseline);
+      scene.tweens.add({
+        targets: car,
+        x: fallX,
+        y: waterY + carHeight,
+        angle: 72,
+        alpha: 0.08,
+        duration: 680,
+        ease: "Cubic.easeIn",
+      });
+      return;
+    }
+    if (mode === "stuck" && !vm.reducedMotion && scene.tweens?.add) {
+      car.setPosition(Math.max(startX, stuckX - 26), baseline);
+      scene.tweens.add({
+        targets: car,
+        x: stuckX,
+        duration: 360,
+        yoyo: true,
+        repeat: 1,
+        ease: "Sine.easeInOut",
+      });
+      return;
+    }
+
+    const finalX = mode === "parked" ? parkedX : mode === "stuck" ? stuckX : startX;
+    const finalY = mode === "falling" ? waterY + carHeight : baseline;
+    car.setPosition(finalX, finalY);
+    if (mode === "falling") {
+      car.setRotation?.(1.25);
+      car.setAlpha?.(0.16);
     }
   }
 
@@ -624,6 +746,12 @@ export class BridgeSceneController {
     this.targetLayer?.destroy();
     this.pieceLayer?.destroy();
     this.effectLayer?.destroy();
+    if (this.scene?.tweens?.killTweensOf && this.carSprite) {
+      this.scene.tweens.killTweensOf(this.carSprite);
+    }
+    this.carSprite?.destroy();
+    this.carSprite = null;
+    this.carSignature = null;
     this.environmentLayer = null;
     this.targetLayer = null;
     this.pieceLayer = null;

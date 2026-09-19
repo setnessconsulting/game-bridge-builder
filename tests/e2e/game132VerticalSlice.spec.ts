@@ -91,6 +91,35 @@ async function dragTrayPiece(page: Page, pieceId: string) {
   await page.mouse.up();
 }
 
+async function tapCanvasTrayPiece(page: Page, pieceId: string) {
+  const canvas = page.locator('[data-testid="bridge-phaser-canvas-host"] canvas');
+  const metrics = await canvas.evaluate((node) => {
+    const element = node as HTMLCanvasElement;
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      bufferWidth: element.width,
+      bufferHeight: element.height,
+    };
+  });
+  const rawGeometry = await page
+    .getByTestId("bridge-phaser-host")
+    .getAttribute("data-input-geometry");
+  if (!rawGeometry) throw new Error("Missing live Phaser input geometry");
+  const geometry = JSON.parse(rawGeometry) as {
+    tray: Array<{ pieceId: string; x: number; y: number }>;
+  };
+  const piece = geometry.tray.find((candidate) => candidate.pieceId === pieceId);
+  if (!piece) throw new Error(`Missing live Phaser geometry for ${pieceId}`);
+  await page.mouse.click(
+    metrics.left + piece.x * (metrics.width / metrics.bufferWidth),
+    metrics.top + piece.y * (metrics.height / metrics.bufferHeight),
+  );
+}
+
 test.describe("GAME-132 one-bridge Phaser vertical slice", () => {
   test("keyboard-only selection and placement reaches authoritative exact completion", async ({
     page,
@@ -116,7 +145,6 @@ test.describe("GAME-132 one-bridge Phaser vertical slice", () => {
     await openSlice(page);
 
     await page.getByRole("button", { name: "4 (4 units)" }).click();
-    await page.getByRole("button", { name: "Place selected" }).click();
     await page.getByRole("button", { name: "Check it" }).click();
     await expect(page.getByTestId("bridge-verdict")).toHaveText("underfill");
     await expect(page.getByTestId("bridge-difference")).toHaveText("Remaining 6");
@@ -124,9 +152,7 @@ test.describe("GAME-132 one-bridge Phaser vertical slice", () => {
 
     await page.getByRole("button", { name: "Reset" }).click();
     await page.getByRole("button", { name: "4 (4 units)" }).click();
-    await page.getByRole("button", { name: "Place selected" }).click();
     await page.getByRole("button", { name: "7 (7 units)" }).click();
-    await page.getByRole("button", { name: "Place selected" }).click();
     await expect(page.getByTestId("bridge-verdict")).toHaveText("overfill");
     await expect(page.getByTestId("bridge-difference")).toHaveText("Over by 1");
     await expect(page.getByTestId("bridge-composition")).toHaveText("4 = 4 units");
@@ -143,15 +169,21 @@ test.describe("GAME-132 one-bridge Phaser vertical slice", () => {
     await expect(page.getByTestId("bridge-verdict")).toHaveText("exact");
   });
 
+  test("real Phaser canvas tap places a plank without a drag", async ({ page }) => {
+    await openSlice(page);
+
+    await tapCanvasTrayPiece(page, "a");
+    await expect(page.getByTestId("bridge-composition")).toHaveText("4 = 4 units");
+    await expect(page.getByTestId("bridge-selected-piece")).toHaveText("none");
+  });
+
   test("reduced motion preserves exact completion and skips crossing dependency", async ({
     page,
   }) => {
     await openSlice(page, "&reduced=1");
 
     await page.getByRole("button", { name: "4 (4 units)" }).click();
-    await page.getByRole("button", { name: "Place selected" }).click();
     await page.getByRole("button", { name: "6 (6 units)" }).click();
-    await page.getByRole("button", { name: "Place selected" }).click();
 
     await expect(page.getByTestId("bridge-phaser-host")).toHaveAttribute(
       "data-reduced-motion",

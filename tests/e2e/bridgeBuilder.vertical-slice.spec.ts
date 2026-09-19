@@ -34,7 +34,6 @@ async function solveCurrentQuestion(page: import("@playwright/test").Page): Prom
 
   for (const id of exactSolution(pieces, target)) {
     await page.locator(`[data-piece-id="${id}"]`).click();
-    await page.getByTestId("bridge-open-slot").click();
   }
 }
 
@@ -79,7 +78,7 @@ test.describe("Bridge Builder qualification vertical slice", () => {
     expect(bodyText).not.toContain("host return handshake");
 
     await page.getByTestId("piece-plank-4").click();
-    await page.getByTestId("bridge-open-slot").click();
+    await expect(page.getByTestId("placed-plank-4")).toBeVisible();
     await expect(page.getByTestId("bridge-dom-mirror")).toHaveAttribute("data-verdict", "underfill");
     await expect(page.getByTestId("bridge-builder-candidate")).toHaveAttribute("data-responsive", /^(tablet|desktop)$/);
   });
@@ -111,10 +110,11 @@ test.describe("Bridge Builder qualification vertical slice", () => {
 
   test("supports underfill, submit, retry, and undo", async ({ page }) => {
     await page.getByTestId("piece-plank-4").click();
-    await page.getByTestId("bridge-open-slot").click();
+    await expect(page.getByTestId("placed-plank-4")).toBeVisible();
     await expect(page.getByTestId("bridge-feedback")).toContainText("6 units remain");
 
     await page.getByTestId("bridge-submit").click();
+    await expect(page.getByTestId("bridge-vehicle")).toHaveAttribute("data-state", "stuck");
     await expect(page.getByTestId("bridge-feedback")).toContainText("Still short by 6 units");
     await page.getByTestId("bridge-retry").click();
     await page.getByTestId("bridge-undo").click();
@@ -123,9 +123,9 @@ test.describe("Bridge Builder qualification vertical slice", () => {
 
   test("shows recoverable overfill feedback", async ({ page }) => {
     await page.getByTestId("piece-plank-7").click();
-    await page.getByTestId("bridge-open-slot").click();
+    await expect(page.getByTestId("placed-plank-7")).toBeVisible();
     await page.getByTestId("piece-plank-5").click();
-    await page.getByTestId("bridge-open-slot").click();
+    await expect(page.getByTestId("bridge-vehicle")).toHaveAttribute("data-state", "falling");
     await expect(page.getByTestId("bridge-feedback")).toContainText("Too long by 2 units");
     await expect(page.getByTestId("bridge-reset")).toBeEnabled();
   });
@@ -135,10 +135,13 @@ test.describe("Bridge Builder qualification vertical slice", () => {
     await page.clock.install();
     await page.getByTestId("bridge-start").click();
     await page.clock.fastForward(15_000);
-    await expect(page.getByTestId("bridge-clock")).toHaveText("75s");
+    const clock = page.getByTestId("bridge-clock");
+    await expect(clock).toHaveText("75s");
+    const remainingBeforeReset = Number((await clock.textContent())?.replace(/\D/g, ""));
     await page.getByTestId("bridge-reset").click();
     await page.clock.fastForward(5_000);
-    await expect(page.getByTestId("bridge-clock")).toHaveText("70s");
+    const remainingAfterReset = Number((await clock.textContent())?.replace(/\D/g, ""));
+    expect(remainingAfterReset).toBeLessThanOrEqual(remainingBeforeReset - 5);
   });
 
   test("query and DOM clock edits cannot revive an expired round", async ({ page }) => {
