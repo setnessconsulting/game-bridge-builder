@@ -34,6 +34,15 @@ import {
 } from "@/lib/bridgeBuilder/oversizeTeach";
 import { formatScaled } from "@/lib/bridgeBuilder/format";
 import { createQualificationRound } from "@/lib/bridgeBuilder/qualificationRound";
+import {
+  bridgesClosedLine,
+  clockEndedReasonLine,
+  coachingLineForTimeout,
+  timedChallengeCtaLabel,
+  timeoutHeadline,
+  untimedRetryCtaLabel,
+} from "@/lib/bridgeBuilder/timeoutCoaching";
+import { compositionUnits as coachingCompositionUnits } from "@/lib/bridgeBuilder/exactness";
 import { closeBridgeSoundContext, playBridgeCue } from "@/lib/bridgeBuilder/sound";
 import type { BridgePuzzle, Piece } from "@/lib/bridgeBuilder/types";
 import carSpriteUrl from "@/assets/bridge-builder/car-sprite.png";
@@ -178,6 +187,10 @@ export default function BridgeBuilderCandidate() {
   const retryNoticeTimerRef = useRef<number | null>(null);
   const presentationDispatchRef = useRef<() => void>(() => {});
   const [hasStarted, setHasStarted] = useState(false);
+  // GAME-304 / GAME-305: Relaxed (untimed) round shape in the production
+  // candidate. Free site only; never extends an expired clock — the untimed
+  // retry always starts a NEW session (new sessionId + generation).
+  const [relaxed, setRelaxed] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() =>
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true,
   );
@@ -204,12 +217,27 @@ export default function BridgeBuilderCandidate() {
     () => createBridgeLayout({ canvasWidth: canvasSize.width, canvasHeight: canvasSize.height }),
     [canvasSize],
   );
-  const expired = clock.expired || clock.remainingMs === 0;
+  // GAME-304: Relaxed rounds never expire on the clock — only the
+  // 6-construction cap ends them. Timed rounds expire on either.
+  const clockExpired = !relaxed && (clock.expired || clock.remainingMs === 0);
+  const capReached = session.bridgesSolved >= clock.capBridges;
+  const expired = clockExpired || capReached;
+  const clockEnded = !relaxed && clockExpired && !capReached;
   const currentPuzzleIndex = Math.max(
     0,
     roundPuzzles.findIndex((puzzle) => puzzle.id === session.puzzle.id),
   );
-  const roundComplete = expired || session.bridgesSolved >= clock.capBridges;
+  const roundComplete = expired || capReached;
+  // GAME-304: deterministic coaching for the clock-ended summary. Derived
+  // from round stats so the same state always yields the same line.
+  const timeoutCoaching = coachingLineForTimeout({
+    bridgesSolved: session.bridgesSolved,
+    filledUnits: coachingCompositionUnits(session.puzzle, session.placed),
+    gapUnits: session.puzzle.gapUnits,
+    denominator: session.puzzle.denominator,
+    attempts: session.attempts,
+    failedPlacements: session.failedPlacements,
+  });
   const viewModel = useMemo(
     () =>
       deriveBridgeViewModel(session, {
@@ -225,13 +253,14 @@ export default function BridgeBuilderCandidate() {
           generation: intentContext.generation,
           capSeconds: clock.capSeconds,
           capBridges: clock.capBridges,
-          deadlineMs: clock.deadlineMs,
-          remainingMs: clock.remainingMs,
+          // GAME-304: Relaxed rounds carry no deadline — null, not zero.
+          deadlineMs: relaxed ? null : clock.deadlineMs,
+          remainingMs: relaxed ? null : clock.remainingMs,
           pauseBudgetRemainingMs: clock.pauseBudgetRemainingMs,
           expired,
         },
       }),
-    [clock, expired, hoveredPieceId, intentContext, layout, muted, numberFace, reducedMotion, session],
+    [clock, expired, hoveredPieceId, intentContext, layout, muted, numberFace, reducedMotion, relaxed, session],
   );
   const availablePieces = viewModel.pieceTray;
   const selectedPiece = session.selectedPieceId
@@ -258,7 +287,7 @@ export default function BridgeBuilderCandidate() {
   }, []);
 
   useEffect(() => {
-    if (!hasStarted) return;
+    if (!hasStarted || relaxed) return;
     const timer = window.setInterval(() => {
       setClock((previous) => advanceBridgeClock(previous, performance.now()));
     }, 200);
@@ -276,13 +305,17 @@ export default function BridgeBuilderCandidate() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [hasStarted]);
+  }, [hasStarted, relaxed]);
 
+  // GAME-304: clock-ended announcement is coaching, never the bare
+  // administrative freeze line. Relaxed cap-complete keeps its own summary.
   useEffect(() => {
-    if (expired && session.phase !== "exact") {
-      setAnnouncement("Time is up. Your round is frozen.");
+    if (clockEnded && session.phase !== "exact") {
+      setAnnouncement(
+        `${timeoutHeadline()} ${bridgesClosedLine(session.bridgesSolved)} ${timeoutCoaching}`,
+      );
     }
-  }, [expired, session.phase]);
+  }, [clockEnded, session.bridgesSolved, session.phase, timeoutCoaching]);
 
   useEffect(() => {
     setClock((previous) => expireBridgeClockAtCap(previous, session.bridgesSolved));
@@ -462,7 +495,8 @@ export default function BridgeBuilderCandidate() {
   }
 
   function togglePause() {
-    if (!hasStarted || expired) return;
+    // GAME-304: Relaxed rounds carry no clock, so there is nothing to pause.
+    if (!hasStarted || expired || relaxed) return;
     const nextPaused = !paused;
     setPaused(nextPaused);
     setClock((previous) =>
@@ -521,7 +555,12 @@ export default function BridgeBuilderCandidate() {
     setAnnouncement(questionText(session.puzzle, 1));
   }
 
-  function startNewRound() {
+  /**
+   * GAME-304: start a brand-new round. The untimed retry creates a fresh
+   * session (new sessionId + generation) on the same skill with no deadline —
+   * it never resumes or extends the expired clock.
+   */
+  function startRound(options: { untimed: boolean }) {
     const nextPuzzles = createQualificationRound(roundSeedRef.current++, {
       previousPuzzle: session.puzzle,
     });
@@ -539,11 +578,20 @@ export default function BridgeBuilderCandidate() {
     setClock(createBridgeClock({ nowMs: performance.now() }));
     setPaused(false);
     setHasStarted(true);
+    setRelaxed(options.untimed);
     clearIntentIssue();
     setRendererStatus("loading");
     setHoveredPieceId(null);
     setDeniedPulse(0);
     setAnnouncement(questionText(firstPuzzle, 1));
+  }
+
+  function startUntimedRetry() {
+    startRound({ untimed: true });
+  }
+
+  function startTimedChallenge() {
+    startRound({ untimed: false });
   }
 
   const bridgeStyle = {
@@ -583,7 +631,22 @@ export default function BridgeBuilderCandidate() {
         <section className="bb-candidate-setup" data-testid="bridge-setup" aria-labelledby="bridge-setup-title">
           <p className="eyebrow">Before you start</p>
           <h2 id="bridge-setup-title">Ready to build a bridge?</h2>
-          <p>Each solved bridge brings a fresh target and plank set. Build up to 6 bridges in 90 seconds.</p>
+          <p>Each solved bridge brings a fresh target and plank set. Build up to 6 bridges in 90 seconds — or practice with no timer.</p>
+          {/* GAME-305 minimal surfacing in the candidate: Relaxed is the
+              discoverable untimed first-session path. Free site only. */}
+          <button
+            type="button"
+            data-testid="setup-relaxed"
+            aria-pressed={relaxed}
+            onClick={() => setRelaxed((value) => !value)}
+          >
+            {relaxed ? "Relaxed build on — no timer" : "Relaxed build — no timer"}
+          </button>
+          <p className="muted-label">
+            {relaxed
+              ? "Relaxed is on: no clock, up to 6 bridges."
+              : "Relaxed is off: 90 seconds or 6 bridges."}
+          </p>
           <fieldset className="bb-face-choice">
             <legend>How should plank values appear?</legend>
             <button
@@ -647,13 +710,21 @@ export default function BridgeBuilderCandidate() {
             <span data-testid="bridge-progress">
               Bridge {Math.min(currentPuzzleIndex + 1, clock.capBridges)} of {clock.capBridges}
             </span>
-            <span data-testid="bridge-clock" className={clock.remainingMs <= 10_000 ? "timer-low" : "timer"}>
-              {formatClockMs(clock.remainingMs)}
-            </span>
+            {relaxed ? (
+              <span data-testid="bridge-clock" data-relaxed="true" className="timer-relaxed">
+                Relaxed — no timer
+              </span>
+            ) : (
+              <span data-testid="bridge-clock" data-relaxed="false" className={clock.remainingMs <= 10_000 ? "timer-low" : "timer"}>
+                {formatClockMs(clock.remainingMs)}
+              </span>
+            )}
             <span>{formatPoints(session)}</span>
-            <button type="button" className="link-button" onClick={togglePause}>
-              {paused ? "Resume" : "Pause"}
-            </button>
+            {relaxed ? null : (
+              <button type="button" className="link-button" onClick={togglePause}>
+                {paused ? "Resume" : "Pause"}
+              </button>
+            )}
           </div>
 
           <div className="bb-candidate-board">
@@ -897,14 +968,12 @@ export default function BridgeBuilderCandidate() {
             </div>
           ) : null}
 
-          {expired && session.phase !== "exact" ? (
+          {/* GAME-304: clock-ended notice is coaching + bridges closed, never
+              the bare administrative freeze line. */}
+          {clockEnded && session.phase !== "exact" ? (
             <div className="bb-candidate-expired" role="status" data-testid="bridge-expired" ref={expiredNoticeRef}>
-              <strong>Round complete</strong>
-              <span>
-                {session.bridgesSolved >= clock.capBridges
-                  ? "All six bridges are complete."
-                  : "Time is up. Your round is frozen."}
-              </span>
+              <strong>{timeoutHeadline()}</strong>
+              <span>{clockEndedReasonLine()}</span>
             </div>
           ) : null}
 
@@ -912,11 +981,24 @@ export default function BridgeBuilderCandidate() {
             <section className="bb-candidate-summary" data-testid="bridge-summary" aria-labelledby="bridge-summary-title" ref={summaryRef}>
               <p className="eyebrow">Round complete</p>
               <h3 id="bridge-summary-title">
-                You solved {session.bridgesSolved} bridge{session.bridgesSolved === 1 ? "" : "s"}.
+                {clockEnded
+                  ? timeoutHeadline()
+                  : `You solved ${session.bridgesSolved} bridge${session.bridgesSolved === 1 ? "" : "s"}.`}
               </h3>
+              <p data-testid="bridge-bridges-closed">{bridgesClosedLine(session.bridgesSolved)}</p>
+              {clockEnded ? <p>{clockEndedReasonLine()}</p> : null}
+              <p data-testid="bridge-coaching">{timeoutCoaching}</p>
               <p>{formatPoints(session)} · {session.starsTotal} stars</p>
               <p className="muted-label">Your progress stays on this device for this round.</p>
-              <button type="button" className="button primary" onClick={startNewRound}>Start a new round</button>
+              {/* GAME-304: primary CTA starts a NEW untimed same-skill round —
+                  it never extends the expired clock. Secondary returns to the
+                  timed challenge without guilt framing. */}
+              <button type="button" className="button primary" data-testid="bridge-retry-untimed" onClick={startUntimedRetry}>
+                {untimedRetryCtaLabel()}
+              </button>
+              <button type="button" className="button" data-testid="bridge-retry-timed" onClick={startTimedChallenge}>
+                {timedChallengeCtaLabel()}
+              </button>
             </section>
           ) : null}
         </>
