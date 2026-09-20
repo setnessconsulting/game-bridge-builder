@@ -1,27 +1,27 @@
 # Bridge Builder standalone qualification status
 
-**Current snapshot:** 2026-09-19
+**Current snapshot:** 2026-09-20
 
 **Candidate status:** `promoted-to-production` (the immutable artifact manifest remains `candidate-not-approved`)
 
-**Current candidate:** `0.1.0-qualification.9` — published immutably to private R2 and promoted through the games-site production catalog
+**Current candidate:** `0.1.0-qualification.10` — published immutably to private R2 and promoted through the games-site production catalog
 
-**Candidate source commit:** `a260b0e642ae40be296b0505964f314f9f164f9e` (GAME-297 visual polish, direct placement/failure feedback, and the release PNG content-type fix)
+**Candidate source commit:** `c432122cc2c2b04021a21a5961ddee37284d5667` (GAME-297 presentation transition, renderer-status, and player-copy fixes)
 
-**CI evidence:** [Bridge Builder CI run 35485760229](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35485760229) passed both `verify` and `real-phaser-render` for the source branch head; the immutable candidate payload is pinned to the source commit above.
+**CI evidence:** [Bridge Builder CI run 35528215801](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35528215801) passed both `verify` and `real-phaser-render` for the source branch head; the immutable candidate payload is pinned to the source commit above.
 
-**Production promotion:** [games-site PR #3](https://github.com/setnessconsulting/games-site/pull/3) merged as `0114b446bbef92cd044e54bf2ed75047bcf44f09`; the Cloudflare Pages production deployment is [e0b68820](https://e0b68820.games-site-7pn.pages.dev) from that merge.
+**Production promotion:** [games-site PR #5](https://github.com/setnessconsulting/games-site/pull/5) merged as `914d594120edcaccbef35495df0d20e956d9ce03`; the Cloudflare Pages production deployment is [17913bdd](https://17913bdd.games-site-7pn.pages.dev) from that merge.
 
 **Owner decisions:** O-1 through O-8 were approved as policy decisions on 2026-09-17. The `GAME-294` renderer-contract and `GAME-295` curriculum-supply implementations are present on the Wave 2 branch and pass their automated checks; Jira review/closeout is still open. Their proposed thresholds remain proposed, not ratified. O-7 executors and dates remain open.
 
 This record distinguishes engineering checks from hosted, owner, and human-gated release evidence. The owner approved GAME-297 promotion after Chrome and Android testing; LevelBest remains a separate integration.
 
-## Current candidate checks — candidate `.9`
+## Current candidate checks — candidate `.10`
 
-- Candidate `.9` incorporates GAME-297's visual polish pass plus the follow-up player feedback: a procedural bridge environment with a larger water span, wood-style planks, high-resolution car artwork, explicit target-span feedback, Phaser/DOM visual parity, responsive layout, player-facing copy cleanup, click-to-place input with drag fallback, success crossing/audio cues, failure feedback for underfill/overfill, honest pause messaging, and reduced-motion handling. Gameplay math, intent authority, and the independent `/?game132=1` route remain unchanged.
-- The candidate workflow and local verification passed typecheck, lint, 182 unit tests across 18 files, full local E2E (19 passed, 1 hosted-only skip), release build, release-manifest check, and the real Phaser/SwiftShader render lane (2 passed) before publishing. The immutable R2 upload completed under `bridge-builder/0.1.0-qualification.9/`; the manifest records source commit `a260b0e642ae40be296b0505964f314f9f164f9e` and remains `candidate-not-approved`.
-- The hosted Chromium journey passed (**1 passed**) against the live preview. It loaded the pinned `.9` iframe, reached `Canvas ready`, completed an exact-fit click placement, and verified the manifest plus every listed asset's status, content type, immutable cache header, byte count, and SHA-256.
-- The games-site preview branch `codex/bridge-builder-preview-qualification-5` pinned `.9` in commit `26d8868`; the active preview is [Bridge Builder play route](https://d5623e4f.games-site-7pn.pages.dev/bridge-builder/play/). The hosted production route now serves the same immutable `.9` candidate through the production catalog.
+- Candidate `.10` incorporates GAME-297's visual polish pass plus the follow-up player feedback: a procedural bridge environment with a larger water span, wood-style planks, high-resolution car artwork, explicit target-span feedback, Phaser/DOM visual parity, responsive layout, player-facing copy cleanup, click-to-place input with drag fallback, success crossing/audio cues, failure feedback for underfill/overfill, honest pause messaging, and reduced-motion handling. Gameplay math, intent authority, and the independent `/?game132=1` route remain unchanged.
+- The candidate workflow and local verification passed typecheck, lint, 182 unit tests across 18 files, release build, release-manifest check, and the real Phaser/SwiftShader render lane (2 passed) before publishing. The local E2E suite recorded 16 passed and 1 hosted-only skip; three suite-load timeouts each passed when rerun in isolation. The immutable R2 upload completed under `bridge-builder/0.1.0-qualification.10/`; the manifest records source commit `c432122cc2c2b04021a21a5961ddee37284d5667` and remains `candidate-not-approved`.
+- The hosted Chromium journey passed (**1 passed**) against both the production preview and the custom domain. It loaded the pinned `.10` iframe, reached `Canvas ready`, reported `Phaser rendering surface ready.`, completed an exact-fit click placement, found no duplicate `stage` runtime error, and verified the manifest plus every listed asset's status, content type, immutable cache header, byte count, and SHA-256.
+- The games-site promotion branch pinned `.10` in commit `565fc18283a91fa8e2ac16a99c0e687265b9d502`; the preview passed its site checks and hosted journey before [PR #5](https://github.com/setnessconsulting/games-site/pull/5) merged. The hosted production route now serves the immutable `.10` candidate through the production catalog.
 
 ## Historical Wave 1 checks — candidate `.2`
 
@@ -51,11 +51,11 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
 
 ## Hosting and promotion boundary
 
-- Historical `.4` hosted preview: [Bridge Builder play route](https://83cdd01b.games-site-7pn.pages.dev/bridge-builder/play/) from branch `codex/bridge-builder-wave2-preview`, source `be4078a`. The current `.9` preview is recorded above; the prior `.3` preview remains at [its versioned route](https://b2de4a6f.games-site-7pn.pages.dev/bridge-builder/play/).
-- The hosted Chromium journey passes against the actual `.9` iframe: the frame pins the exact version, creates a real Phaser canvas after Start, shows the DOM mirror, completes an exact-fit click placement, reads the candidate manifest, and verifies every listed object’s response, content type, immutable cache header, byte count, and hash. The entry and assets return `200` with immutable cache metadata. The separate GitHub SwiftShader lane verifies actual Phaser WebGL rendering and its negative control.
+- Historical `.4` hosted preview: [Bridge Builder play route](https://83cdd01b.games-site-7pn.pages.dev/bridge-builder/play/) from branch `codex/bridge-builder-wave2-preview`, source `be4078a`. The current `.10` preview and production evidence are recorded above; the prior `.3` preview remains at [its versioned route](https://b2de4a6f.games-site-7pn.pages.dev/bridge-builder/play/).
+- The hosted Chromium journey passes against the actual `.10` iframe: the frame pins the exact version, creates a real Phaser canvas after Start, shows the DOM mirror, completes an exact-fit click placement, reads the candidate manifest, and verifies every listed object’s response, content type, immutable cache header, byte count, and hash. The entry and assets return `200` with immutable cache metadata. The separate GitHub SwiftShader lane verifies actual Phaser WebGL rendering and its negative control.
 - The manifest's hosted-preview field was pending when the immutable artifact was created; the dated post-upload hosted test result is recorded here, not written back into the versioned manifest.
-- Production [Bridge Builder page](https://games.setnessconsulting.com/bridge-builder/) is live at [the launcher](https://games.setnessconsulting.com/bridge-builder/) and [the play route](https://games.setnessconsulting.com/bridge-builder/play/); both resolve the `.9` catalog pointer. The production entry and exact `.9` asset returned `200`, with immutable caching and `nosniff`; LevelBest has not been changed.
-- The immutable release manifest remains `candidate-not-approved` by design; production approval is represented by the reviewed games-site catalog merge above. The final hosted production journey passed (**1 passed**) against the custom domain, including exact-fit click placement and manifest asset/hash verification.
+- Production [Bridge Builder page](https://games.setnessconsulting.com/bridge-builder/) is live at [the launcher](https://games.setnessconsulting.com/bridge-builder/) and [the play route](https://games.setnessconsulting.com/bridge-builder/play/); both resolve the `.10` catalog pointer. The production entry and exact `.10` asset returned `200`, with immutable caching and `nosniff`; LevelBest has not been changed.
+- The immutable release manifest remains `candidate-not-approved` by design; production approval is represented by the reviewed games-site catalog merge above. The final hosted production journey passed (**1 passed**) against the custom domain, including exact-fit click placement, renderer readiness, duplicate-script regression coverage, and manifest asset/hash verification.
 
 ## Post-promotion follow-up
 
