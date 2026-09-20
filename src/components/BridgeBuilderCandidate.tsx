@@ -25,6 +25,13 @@ import {
   type BridgeSessionState,
   type BridgeSessionEffect,
 } from "@/lib/bridgeBuilder/session";
+import { availableTray, compositionUnits, maxShimAbs } from "@/lib/bridgeBuilder/exactness";
+import { previewPlacementFit } from "@/lib/bridgeBuilder/engine";
+import {
+  amountPhrase,
+  tooLongForCopy,
+  tooLongShortCopy,
+} from "@/lib/bridgeBuilder/oversizeTeach";
 import { formatScaled } from "@/lib/bridgeBuilder/format";
 import { createQualificationRound } from "@/lib/bridgeBuilder/qualificationRound";
 import { closeBridgeSoundContext, playBridgeCue } from "@/lib/bridgeBuilder/sound";
@@ -39,15 +46,11 @@ function lastPlaced(state: BridgeSessionState): Piece | undefined {
 
 const CROSSING_PRESENTATION_MS = 1_200;
 
-function amountPhrase(value: number, denominator: number): string {
-  const absoluteValue = Math.abs(value);
-  const formatted = formatScaled(absoluteValue, denominator);
-  return `${formatted} ${absoluteValue === denominator ? "unit" : "units"}`;
-}
-
 function remainingPhrase(value: number, denominator: number): string {
   return `${amountPhrase(value, denominator)} ${Math.abs(value) === denominator ? "remains" : "remain"}`;
 }
+
+export { tooLongForCopy, tooLongShortCopy };
 
 function feedbackFor(state: BridgeSessionState): string {
   if (state.phase === "exact") return "Exact fit. The crossing is ready.";
@@ -57,10 +60,40 @@ function feedbackFor(state: BridgeSessionState): string {
       : `Too long by ${amountPhrase(state.lastOutcome?.diff ?? 0, state.puzzle.denominator)}. The car slips into the water.`;
   }
   if (state.lastOutcome?.status === "overhang") {
+    const filled = compositionUnits(state.puzzle, state.placed);
+    const remaining = state.puzzle.gapUnits - filled;
+    const label = state.lastOverhang?.label ?? "That plank";
+    if (remaining > 0) {
+      return `${tooLongForCopy({
+        pieceLabel: label,
+        remaining,
+        excess: state.lastOutcome.diff,
+        denominator: state.puzzle.denominator,
+      })} The car slips into the water.`;
+    }
     return `Too long by ${amountPhrase(state.lastOutcome.diff, state.puzzle.denominator)}. The car slips into the water. Choose a shorter plank.`;
   }
   if (state.lastOutcome?.status === "partial") {
     return `Placed. ${remainingPhrase(state.puzzle.gapUnits - state.lastOutcome.filledAfter, state.puzzle.denominator)}. Add another plank.`;
+  }
+  // GAME-302: selecting an oversized plank previews the refusal before commit.
+  if (state.phase === "building" && state.selectedPieceId && state.lastOutcome == null) {
+    const filled = compositionUnits(state.puzzle, state.placed);
+    const tray = availableTray(state.tray, state.placed);
+    const selected = tray.find((piece) => piece.id === state.selectedPieceId);
+    if (selected) {
+      const preview = previewPlacementFit(state.puzzle, filled, selected.units, {
+        allowOvershootUpTo: maxShimAbs(tray),
+      });
+      if (preview.wouldOverhang && preview.remaining > 0) {
+        return tooLongForCopy({
+          pieceLabel: selected.label,
+          remaining: preview.remaining,
+          excess: preview.excess,
+          denominator: state.puzzle.denominator,
+        });
+      }
+    }
   }
   return "Choose a plank, then place it in the open span.";
 }
@@ -155,8 +188,17 @@ export default function BridgeBuilderCandidate() {
   const [announcement, setAnnouncement] = useState(feedbackFor(session));
   const [intentIssue, setIntentIssue] = useState<string | null>(null);
   const [rendererStatus, setRendererStatus] = useState<"loading" | "ready" | "failed">("loading");
+  // GAME-302: hover/focus preview target for soft overhang affordance.
+  const [hoveredPieceId, setHoveredPieceId] = useState<string | null>(null);
+  // GAME-302: increments on every refused (overhang) place attempt so repeated
+  // identical refusals still produce visible + announced feedback (no silent no-op).
+  const [deniedPulse, setDeniedPulse] = useState(0);
   const soundRef = useRef<AudioContext | null>(null);
   const finishCuePlayedRef = useRef(false);
+  // GAME-303: layout hook so timeout / round-complete feedback is never left
+  // below the fold inside a scroll trap — scrolled into view on appearance.
+  const expiredNoticeRef = useRef<HTMLDivElement | null>(null);
+  const summaryRef = useRef<HTMLElement | null>(null);
 
   const layout = useMemo(
     () => createBridgeLayout({ canvasWidth: canvasSize.width, canvasHeight: canvasSize.height }),
@@ -176,6 +218,7 @@ export default function BridgeBuilderCandidate() {
         muted,
         numberFace,
         crossing: session.phase === "exact" && !reducedMotion,
+        placementPreviewPieceId: hoveredPieceId,
         session: {
           mode: clock.mode,
           sessionId: intentContext.sessionId,
@@ -188,7 +231,7 @@ export default function BridgeBuilderCandidate() {
           expired,
         },
       }),
-    [clock, expired, intentContext, layout, muted, numberFace, reducedMotion, session],
+    [clock, expired, hoveredPieceId, intentContext, layout, muted, numberFace, reducedMotion, session],
   );
   const availablePieces = viewModel.pieceTray;
   const selectedPiece = session.selectedPieceId
@@ -306,6 +349,19 @@ export default function BridgeBuilderCandidate() {
     if (session.bridgesSolved < clock.capBridges) finishCuePlayedRef.current = false;
   }, [clock.capBridges, muted, session.bridgesSolved]);
 
+  // GAME-303: keep place/submit/timeout feedback on screen. The primary
+  // footer (Check it + live status) is sticky via CSS; the timeout and
+  // round-complete notices render after the board, so bring them into view
+  // when they appear. block:"nearest" never moves an already-visible notice,
+  // and reduced-motion users get an instant jump (no smooth scroll).
+  useEffect(() => {
+    if (!hasStarted) return;
+    const target = roundComplete ? summaryRef.current : expired ? expiredNoticeRef.current : null;
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "nearest" });
+    }
+  }, [expired, roundComplete, hasStarted, reducedMotion]);
+
   function clearIntentIssue() {
     if (retryNoticeTimerRef.current !== null) {
       window.clearTimeout(retryNoticeTimerRef.current);
@@ -363,6 +419,10 @@ export default function BridgeBuilderCandidate() {
     const result = applyBridgeIntent(session, validation.intent);
     playEffects(result.effects);
     setSession(result.state);
+    // GAME-302: every refused overhang must pulse visible + announced feedback.
+    if (result.state.lastOutcome?.status === "overhang") {
+      setDeniedPulse((pulse) => pulse + 1);
+    }
     setAnnouncement(feedbackFor(result.state));
   }
 
@@ -393,6 +453,11 @@ export default function BridgeBuilderCandidate() {
     }
     clearIntentIssue();
     setSession(next);
+    // GAME-302: refused overhang (including select+place in one click) must
+    // never be a silent no-op — pulse visible + announced feedback.
+    if (next.lastOutcome?.status === "overhang") {
+      setDeniedPulse((pulse) => pulse + 1);
+    }
     setAnnouncement(feedbackFor(next));
   }
 
@@ -451,6 +516,8 @@ export default function BridgeBuilderCandidate() {
     setClock(createBridgeClock({ nowMs: performance.now() }));
     setPaused(false);
     setHasStarted(true);
+    setHoveredPieceId(null);
+    setDeniedPulse(0);
     setAnnouncement(questionText(session.puzzle, 1));
   }
 
@@ -474,6 +541,8 @@ export default function BridgeBuilderCandidate() {
     setHasStarted(true);
     clearIntentIssue();
     setRendererStatus("loading");
+    setHoveredPieceId(null);
+    setDeniedPulse(0);
     setAnnouncement(questionText(firstPuzzle, 1));
   }
 
@@ -481,6 +550,25 @@ export default function BridgeBuilderCandidate() {
     "--bb-span-width": `${Math.max(240, viewModel.span * viewModel.layout.unitPx)}px`,
   } as CSSProperties;
   const currentVehicleState = vehicleState(viewModel);
+  // GAME-302: soft overhang preview target — hover/focus wins, selection is the fallback.
+  const previewTargetId = hoveredPieceId ?? session.selectedPieceId;
+  const previewTarget = previewTargetId
+    ? availablePieces.find((piece) => piece.id === previewTargetId)
+    : undefined;
+  const showOverhangPreview =
+    Boolean(previewTarget?.oversized) &&
+    session.phase === "building" &&
+    !expired &&
+    viewModel.remainingSpan > 0;
+  const previewExcess = previewTarget?.excessUnits ?? viewModel.previewOversize?.excessUnits ?? viewModel.selectedOversize?.excessUnits ?? null;
+  const previewExcessPx =
+    previewExcess != null ? Math.max(28, previewExcess * viewModel.layout.unitPx) : 0;
+  const openSlotPreviewLabel = showOverhangPreview && previewTarget
+    ? `Place ${pieceLabel({ units: previewTarget.units, label: previewTarget.label })} — ${tooLongShortCopy(viewModel.remainingSpan, session.puzzle.denominator)}, would stick out by ${amountPhrase(previewExcess ?? 0, session.puzzle.denominator)}`
+    : selectedPiece
+      ? `Place ${pieceLabel(selectedPiece)} in the open span`
+      : "Open span; click a plank to add it";
+  const isDenied = session.lastOutcome?.status === "overhang";
 
   return (
     <div
@@ -618,9 +706,11 @@ export default function BridgeBuilderCandidate() {
               <p className="bb-input-hint">Click a plank to add it. Dragging to the open span also works.</p>
 
               <div
-                className={`bb-candidate-bridge ${viewModel.exact ? "is-exact" : ""} ${viewModel.overfill ? "is-over" : ""}`}
+                className={`bb-candidate-bridge ${viewModel.exact ? "is-exact" : ""} ${viewModel.overfill ? "is-over" : ""} ${showOverhangPreview ? "is-over-preview" : ""} ${isDenied ? "is-denied" : ""}`}
                 style={bridgeStyle}
                 data-state={viewModel.exact ? "exact" : viewModel.overfill ? "overfill" : "underfill"}
+                data-preview-overhang={showOverhangPreview ? "true" : "false"}
+                data-denied-pulse={deniedPulse}
                 role="group"
                 aria-label="Bridge span"
               >
@@ -649,9 +739,11 @@ export default function BridgeBuilderCandidate() {
                 ))}
                 <button
                   type="button"
-                  className={`bb-candidate-open-slot ${viewModel.overfill ? "is-over" : ""} ${viewModel.exact ? "is-exact" : ""}`}
+                  className={`bb-candidate-open-slot ${viewModel.overfill ? "is-over" : ""} ${viewModel.exact ? "is-exact" : ""} ${showOverhangPreview ? "is-over-preview" : ""} ${isDenied ? "is-denied" : ""}`}
                   data-testid="bridge-open-slot"
-                  aria-label={selectedPiece ? `Place ${pieceLabel(selectedPiece)} in the open span` : "Open span; click a plank to add it"}
+                  data-preview-overhang={showOverhangPreview ? "true" : "false"}
+                  data-denied-pulse={deniedPulse}
+                  aria-label={openSlotPreviewLabel}
                   disabled={!viewModel.capabilities.canPlace}
                   onClick={() => selectedPiece && dispatchAction({ type: "placePiece", pieceId: selectedPiece.id })}
                   onDragOver={(event) => event.preventDefault()}
@@ -659,31 +751,77 @@ export default function BridgeBuilderCandidate() {
                 >
                   {viewModel.remainingSpan > 0 ? `${viewModel.remainingSpan} open` : "Closed"}
                 </button>
+                {showOverhangPreview && previewTarget && previewExcess != null ? (
+                  <span
+                    className="bb-overhang-preview"
+                    data-testid="overhang-preview"
+                    data-piece-id={previewTarget.id}
+                    data-excess-units={previewExcess}
+                    style={{ width: `${previewExcessPx}px` } as CSSProperties}
+                    role="img"
+                    aria-label={`${previewTarget.label} would stick out by ${amountPhrase(previewExcess, session.puzzle.denominator)}`}
+                  >
+                    <span aria-hidden="true" className="bb-overhang-preview-glyph">⚠</span>
+                    <span className="bb-overhang-preview-text">
+                      Would stick out by {amountPhrase(previewExcess, session.puzzle.denominator)}
+                    </span>
+                  </span>
+                ) : null}
               </div>
 
               <div className="bb-candidate-tray" role="group" aria-label="Piece tray">
-                {availablePieces.map((piece) => (
-                  <button
-                    key={piece.id}
-                    type="button"
-                    className={`bb-candidate-piece ${piece.selected ? "is-selected" : ""} ${piece.focused ? "is-focused" : ""}`}
-                    data-testid={`piece-${piece.id}`}
-                    data-piece-id={piece.id}
-                    data-units={piece.units}
-                    data-face-mode={numberFace}
-                    draggable={!expired}
-                    disabled={expired}
-                    aria-label={pieceLabel(piece)}
-                    aria-pressed={piece.selected}
-                    onClick={(event) => handlePieceActivation(piece.id, event)}
-                    onDragStart={(event) => event.dataTransfer.setData("text/plain", piece.id)}
-                  >
-                    <span className="bb-piece-grain" aria-hidden="true"></span>
-                    <PieceFace units={piece.units} label={piece.label} mode={numberFace} />
-                  </button>
-                ))}
+                {availablePieces.map((piece) => {
+                  const oversized = piece.oversized;
+                  const teachId = `too-long-${piece.id}`;
+                  return (
+                    <button
+                      key={piece.id}
+                      type="button"
+                      className={`bb-candidate-piece ${piece.selected ? "is-selected" : ""} ${piece.focused ? "is-focused" : ""} ${oversized ? "is-too-long" : ""}`}
+                      data-testid={`piece-${piece.id}`}
+                      data-piece-id={piece.id}
+                      data-units={piece.units}
+                      data-face-mode={numberFace}
+                      data-oversized={oversized ? "true" : "false"}
+                      data-excess-units={piece.excessUnits ?? ""}
+                      draggable={!expired}
+                      disabled={expired}
+                      aria-disabled={oversized && !expired ? "true" : undefined}
+                      aria-describedby={oversized ? teachId : undefined}
+                      aria-label={
+                        oversized
+                          ? `${pieceLabel({ units: piece.units, label: piece.label })} — ${tooLongShortCopy(viewModel.remainingSpan, session.puzzle.denominator)}`
+                          : pieceLabel({ units: piece.units, label: piece.label })
+                      }
+                      aria-pressed={piece.selected}
+                      onClick={(event) => handlePieceActivation(piece.id, event)}
+                      onMouseEnter={() => setHoveredPieceId(piece.id)}
+                      onMouseLeave={() => setHoveredPieceId((current) => (current === piece.id ? null : current))}
+                      onFocus={() => setHoveredPieceId(piece.id)}
+                      onBlur={() => setHoveredPieceId((current) => (current === piece.id ? null : current))}
+                      onDragStart={(event) => event.dataTransfer.setData("text/plain", piece.id)}
+                    >
+                      <span className="bb-piece-grain" aria-hidden="true"></span>
+                      <PieceFace units={piece.units} label={piece.label} mode={numberFace} />
+                      {oversized ? (
+                        <span
+                          className="bb-too-long-hint"
+                          id={teachId}
+                          data-testid={teachId}
+                        >
+                          <span aria-hidden="true">⚠ </span>
+                          {tooLongShortCopy(viewModel.remainingSpan, session.puzzle.denominator)}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
 
+              {/* GAME-303: sticky primary footer — Check it + live status stay
+                  on screen without page scroll. Plain div: no semantics,
+                  focus order, or touch-target change. */}
+              <div className="bb-candidate-footer" data-testid="bridge-footer">
               <div className="bb-candidate-actions">
                 <button
                   type="button"
@@ -730,13 +868,17 @@ export default function BridgeBuilderCandidate() {
               ) : null}
 
               <p
-                className={`bb-candidate-feedback ${viewModel.exact ? "is-success" : viewModel.overfill || viewModel.incorrectSubmit ? "is-correction" : ""}`}
+                key={`bridge-feedback-${deniedPulse}`}
+                className={`bb-candidate-feedback ${viewModel.exact ? "is-success" : viewModel.overfill || viewModel.incorrectSubmit ? "is-correction" : ""} ${isDenied ? "is-denied" : ""}`}
                 data-testid="bridge-feedback"
                 data-state={viewModel.exact ? "exact" : viewModel.overfill ? "overfill" : viewModel.underfill ? "underfill" : "building"}
+                data-denied-pulse={deniedPulse}
                 aria-live="polite"
+                role="status"
               >
                 {announcement}
               </p>
+              </div>
             </section>
           </div>
 
@@ -756,7 +898,7 @@ export default function BridgeBuilderCandidate() {
           ) : null}
 
           {expired && session.phase !== "exact" ? (
-            <div className="bb-candidate-expired" role="status" data-testid="bridge-expired">
+            <div className="bb-candidate-expired" role="status" data-testid="bridge-expired" ref={expiredNoticeRef}>
               <strong>Round complete</strong>
               <span>
                 {session.bridgesSolved >= clock.capBridges
@@ -767,7 +909,7 @@ export default function BridgeBuilderCandidate() {
           ) : null}
 
           {roundComplete ? (
-            <section className="bb-candidate-summary" data-testid="bridge-summary" aria-labelledby="bridge-summary-title">
+            <section className="bb-candidate-summary" data-testid="bridge-summary" aria-labelledby="bridge-summary-title" ref={summaryRef}>
               <p className="eyebrow">Round complete</p>
               <h3 id="bridge-summary-title">
                 You solved {session.bridgesSolved} bridge{session.bridgesSolved === 1 ? "" : "s"}.

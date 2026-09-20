@@ -1253,6 +1253,82 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
 .bb-candidate-piece { position: relative; display: flex; align-items: center; justify-content: center; min-height: 64px; padding: 10px; border: 2px solid #c9a776; border-radius: 14px; background: linear-gradient(180deg, #fff3d9, #e6b56e); color: var(--bb-ink); font-weight: 800; text-align: center; cursor: grab; box-shadow: inset 0 -5px 0 rgba(106,58,33,.13), 0 3px 0 rgba(106,58,33,.22); }
 .bb-candidate-piece:hover, .bb-candidate-piece.is-selected, .bb-candidate-piece.is-focused { border-color: var(--bb-wood-dark); background: #f2d09a; }
 .bb-candidate-piece.is-selected { outline: 3px solid rgba(208,163,58,.52); outline-offset: 2px; transform: translateY(-2px); }
+/* GAME-302: oversized tray affordance — dim + dashed border + diagonal hatch + ⚠ glyph + teach copy. Never color alone. */
+.bb-candidate-piece.is-too-long {
+  border-style: dashed;
+  border-color: #7b382f;
+  border-width: 3px;
+  background:
+    repeating-linear-gradient(135deg, rgba(123,56,47,.14) 0 8px, rgba(255,253,247,.9) 8px 16px),
+    linear-gradient(180deg, #fff3d9, #e6b56e);
+  opacity: .92;
+  cursor: pointer;
+  flex-direction: column;
+  gap: 4px;
+}
+.bb-candidate-piece.is-too-long:hover, .bb-candidate-piece.is-too-long.is-selected, .bb-candidate-piece.is-too-long.is-focused {
+  border-color: #7b382f;
+  background:
+    repeating-linear-gradient(135deg, rgba(123,56,47,.22) 0 8px, #f2d09a 8px 16px);
+}
+.bb-too-long-hint {
+  position: relative;
+  z-index: 1;
+  display: block;
+  font-size: 11px;
+  line-height: 1.3;
+  font-weight: 900;
+  color: #5f2b23;
+  background: rgba(255,253,247,.92);
+  border: 1px dashed #7b382f;
+  border-radius: 8px;
+  padding: 2px 6px;
+  max-width: 100%;
+}
+/* GAME-302: soft overhang preview — geometry (excess width) + hatch + glyph + text. */
+.bb-candidate-bridge.is-over-preview .bb-candidate-open-slot,
+.bb-candidate-open-slot.is-over-preview {
+  border-style: dashed;
+  border-color: #7b382f;
+  background: repeating-linear-gradient(135deg, #fff0e8 0 10px, #ffe2d7 10px 16px);
+}
+.bb-overhang-preview {
+  position: relative;
+  z-index: 2;
+  align-self: flex-end;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  min-width: 28px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 8px 10px;
+  border: 3px dashed #7b382f;
+  border-radius: 10px;
+  background: repeating-linear-gradient(135deg, rgba(184,92,74,.32) 0 10px, rgba(255,240,232,.96) 10px 18px);
+  color: #5f2b23;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.bb-overhang-preview-glyph { font-size: 14px; }
+.bb-overhang-preview-text { overflow: hidden; text-overflow: ellipsis; }
+/* GAME-302: refused-place pulse — visible shake + border. Disabled under reduced motion. */
+@keyframes bb-deny-shake { 0%,100% { transform: translateX(0);} 25% { transform: translateX(-5px);} 50% { transform: translateX(5px);} 75% { transform: translateX(-3px);} }
+.bb-candidate-bridge.is-denied .bb-candidate-open-slot,
+.bb-candidate-open-slot.is-denied,
+.bb-candidate-feedback.is-denied {
+  animation: bb-deny-shake 280ms ease-in-out 1;
+}
+.bb-candidate-feedback.is-denied { outline: 3px dashed #7b382f; outline-offset: 2px; }
+.bb-reduce-motion .bb-candidate-bridge.is-denied .bb-candidate-open-slot,
+.bb-reduce-motion .bb-candidate-open-slot.is-denied {
+  animation: none;
+  outline: 3px dashed #7b382f;
+  outline-offset: 2px;
+}
 .bb-piece-grain { position: absolute; inset: 10px; border-radius: 8px; pointer-events: none; opacity: .28; background: repeating-linear-gradient(0deg, var(--bb-wood-dark) 0 2px, transparent 2px 9px); }
 .bb-candidate-piece > span:last-child { position: relative; z-index: 1; }
 .bb-dot-face { position: relative !important; z-index: 1; display: grid; grid-template-columns: repeat(3, 8px); justify-content: center; align-content: center; gap: 4px; min-height: 18px; }
@@ -1291,8 +1367,144 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
   .bb-candidate *, .bb-candidate *::before, .bb-candidate *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
   .bb-candidate .bb-vehicle-falling { bottom: 6%; opacity: .55; transform: rotate(72deg); }
   .bb-candidate .bb-vehicle-parked { left: 82%; }
+  .bb-candidate-bridge.is-denied .bb-candidate-open-slot,
+  .bb-candidate-open-slot.is-denied {
+    animation: none;
+    outline: 3px dashed #7b382f;
+    outline-offset: 2px;
+  }
 }
 
 .bb-plank-preset { background: #6b7686; border-color: #4d596b; opacity: .92; }
 .bb-critter, .bb-diff-chip, .bb-float, .bb-plank-preset { pointer-events: none; }
 .bb-plank-overhang { pointer-events: none !important; }
+
+/* ---------------------------------------------------------------------------
+   GAME-303: primary loop fits one viewport (cross-check GAME-134 responsive).
+   Span + tray + Check it + live status stay visible without page scroll on
+   phone, tablet, and short laptop heights. Scroll survives only in secondary
+   surfaces (pause card). Touch targets (>=44/48px), focus order,
+   reduced-motion, and DOM mirror semantics are unchanged — this block only
+   compacts spacing, caps canvas height in viewport units, and pins the
+   round-status bar + primary footer with position:sticky (no animation).
+   Art/plank treatment (GAME-297) and game rules are untouched.
+--------------------------------------------------------------------------- */
+/* Outer shell compaction, scoped so game132 host + marketing pages keep chrome.
+   The in-game question + span copy restate the goal, so the marketing
+   description yields its height to the primary loop. The h1 stays put. */
+.page-shell:has(.bb-candidate) { padding-top: 20px; padding-bottom: 24px; }
+.page-shell:has(.bb-candidate) .demo-panel { padding: 16px; }
+.page-shell:has(.bb-candidate) .page-copy h1 {
+  font-size: clamp(24px, 3vw, 32px);
+  margin-bottom: 2px;
+}
+.page-shell:has(.bb-candidate) .page-copy > p { display: none; }
+
+.bb-candidate { gap: 12px; }
+.bb-candidate-header { gap: 8px; align-items: center; }
+.bb-candidate-header h2 { font-size: 22px; margin-bottom: 4px; }
+.bb-candidate-lede { font-size: 14px; }
+.bb-candidate-settings { gap: 6px; }
+.bb-small-button { padding: 8px 10px; font-size: 13px; }
+
+/* Round status stays pinned to the viewport top — clock/points/pause never
+   scroll away, with no scroll container of its own (no trap). */
+.bb-candidate-status {
+  position: sticky;
+  top: 8px;
+  z-index: 6;
+  gap: 8px;
+  min-height: 48px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+/* Canvas is a duplicate of the DOM mirror (the semantic source), so on short
+   viewports it yields height first. Width still drives the Phaser resize. */
+.bb-candidate-canvas {
+  min-height: 140px;
+  max-height: 26vh;
+  max-height: 26dvh;
+}
+
+.bb-candidate-board { gap: 12px; }
+.bb-candidate-mirror { gap: 10px; padding: 12px; }
+.bb-mirror-heading h3 { font-size: 16px; }
+.bb-span-copy { font-size: 14px; }
+.bb-candidate-bridge { min-height: 116px; padding: 48px 12px 14px; }
+
+/* Single-row tray on every width: 5 pieces fit one 48px+ row on a 390px
+   phone (content ≈ 306px / 5 ≈ 61px each) instead of stacking 3 rows. */
+.bb-candidate-tray { gap: 8px; }
+.bb-candidate-piece { min-height: 56px; padding: 6px 4px; font-size: 14px; }
+.bb-too-long-hint { font-size: 10px; line-height: 1.25; }
+
+/* Primary footer (Check it + retry notice + live status) pins to the
+   viewport bottom until its natural position scrolls into view. Plain
+   wrapper — DOM order, roles, and 48px targets unchanged. */
+.bb-candidate-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 2px solid #d8c8aa;
+  background: linear-gradient(145deg, #fffdf7, #f6ead5);
+}
+
+/* Timeout / round-complete notices render after the board; a tiny TSX hook
+   scrolls them into view on appearance, and scroll-margin keeps them clear
+   of the pinned bars. */
+.bb-candidate-expired,
+.bb-candidate-summary { scroll-margin-top: 64px; scroll-margin-bottom: 120px; }
+
+/* Secondary surface: the pause dialog may scroll internally on tiny screens. */
+.bb-candidate-pause { padding: 12px; }
+.bb-candidate-pause-card { max-height: 90vh; max-height: 90dvh; overflow-y: auto; }
+
+@media (max-width: 680px) {
+  .page-shell:has(.bb-candidate) .demo-panel { padding: 12px; }
+  .page-shell:has(.bb-candidate) .page-copy h1 { font-size: 24px; margin-bottom: 4px; }
+  .page-shell:has(.bb-candidate) .page-copy > p { font-size: 13px; margin-bottom: 6px; }
+  /* Override the earlier 2-column phone tray: one compact row, no extra page
+     height. Later in source, equal specificity — wins intentionally. */
+  .bb-candidate-tray { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .bb-candidate-settings { flex-wrap: nowrap; }
+  .bb-setting-label { display: none; }
+  .bb-candidate-header h2 { font-size: 20px; }
+  /* Width-driven 16/9 would cost ~190px here; the mirror below is the
+     operable surface, so cap the duplicate canvas raster. */
+  .bb-candidate-canvas { min-height: 120px; max-height: 160px; }
+  .bb-candidate-status { font-size: 12px; gap: 6px; }
+}
+
+@media (max-width: 420px) {
+  .bb-setting-label { display: none; }
+  .bb-candidate-piece { min-height: 56px; font-size: 13px; }
+}
+
+/* Short viewports (phone landscape, short tablets/laptops): compress chrome,
+   never controls. All interactive minima stay >=44px. */
+@media (max-height: 720px) {
+  .page-shell:has(.bb-candidate) { padding-top: 8px; padding-bottom: 16px; }
+  .page-shell:has(.bb-candidate) .demo-panel { padding: 8px; }
+  .page-shell:has(.bb-candidate) .page-copy h1 { margin-bottom: 2px; font-size: 22px; }
+  .bb-candidate { gap: 8px; }
+  .bb-candidate-header { gap: 6px; }
+  .bb-candidate-header h2 { font-size: 18px; margin-bottom: 2px; }
+  .bb-candidate-lede { font-size: 12px; }
+  .bb-candidate-status { min-height: 44px; padding: 4px 8px; font-size: 12px; gap: 6px; }
+  .bb-candidate-canvas { min-height: 100px; max-height: 18vh; max-height: 18dvh; }
+  .bb-candidate-board { gap: 8px; }
+  .bb-candidate-mirror { gap: 6px; padding: 10px; }
+  .bb-mirror-heading { gap: 8px; }
+  .bb-mirror-heading h3 { font-size: 14px; }
+  .bb-span-copy { font-size: 12px; }
+  .bb-input-hint { font-size: 11px; margin-top: -4px; }
+  .bb-candidate-bridge { min-height: 104px; padding: 40px 10px 12px; }
+  .bb-candidate-piece { font-size: 13px; }
+  .bb-candidate-actions { gap: 8px; }
+  .bb-candidate-footer { padding-top: 8px; }
+  .bb-candidate-feedback { padding: 8px 10px; font-size: 13px; }
+}
