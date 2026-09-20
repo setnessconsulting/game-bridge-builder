@@ -29,9 +29,8 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
 
   // Exercise the actual candidate inside the hosted frame, not only the shell.
   await frame.getByTestId("piece-plank-4").click();
-  await frame.getByTestId("bridge-open-slot").click();
   await frame.getByTestId("piece-plank-6").click();
-  await frame.getByTestId("bridge-open-slot").click();
+  await expect(frame.getByTestId("bridge-feedback")).toHaveAttribute("data-state", "exact");
   await expect(frame.getByTestId("bridge-feedback")).toContainText(
     "Exact fit. The crossing is ready.",
   );
