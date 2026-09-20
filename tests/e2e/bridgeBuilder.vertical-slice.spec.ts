@@ -50,6 +50,9 @@ test.describe("Bridge Builder qualification vertical slice", () => {
     await expect(page.locator("canvas")).toBeVisible();
     // DOM fallback remains usable, but cannot count as real-render evidence.
     await expect(page.getByTestId("renderer-status")).toHaveText("Canvas ready");
+    await expect(page.getByTestId("phaser-render-status")).toHaveText(
+      "Phaser rendering surface ready.",
+    );
     const canvasPixels = await page.locator("canvas").first().evaluate((element) => {
       const canvas = element as HTMLCanvasElement;
       const context = canvas.getContext("webgl2") ?? canvas.getContext("webgl");

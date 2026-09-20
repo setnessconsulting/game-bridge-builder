@@ -1244,8 +1244,8 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
 .bb-candidate-vehicle img { display: block; width: 100%; height: auto; }
 .bb-vehicle-parked { left: 82%; }
 .bb-vehicle-stuck { left: 30%; animation: bb-vehicle-stuck 360ms ease-in-out 2; }
-.bb-vehicle-falling { left: 52%; bottom: -10%; animation: bb-vehicle-fall 680ms cubic-bezier(.42, 0, .72, 1) forwards; }
-.bb-vehicle-crossing { animation: bb-vehicle-cross 760ms ease-in-out forwards; }
+.bb-vehicle-falling { left: 52%; bottom: -10%; animation: bb-vehicle-fall 900ms cubic-bezier(.42, 0, .72, 1) forwards; }
+.bb-vehicle-crossing { animation: bb-vehicle-cross 1000ms ease-in-out forwards; }
 @keyframes bb-vehicle-cross { from { left: 4%; transform: translateX(0); } to { left: 82%; transform: translateX(0); } }
 @keyframes bb-vehicle-stuck { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(12px); } }
 @keyframes bb-vehicle-fall { from { opacity: 1; transform: translateY(0) rotate(0deg); } to { opacity: .08; transform: translateY(122px) rotate(72deg); } }

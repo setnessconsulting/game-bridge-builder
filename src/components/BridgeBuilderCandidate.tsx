@@ -37,18 +37,30 @@ function lastPlaced(state: BridgeSessionState): Piece | undefined {
   return state.placed[state.placed.length - 1];
 }
 
+const CROSSING_PRESENTATION_MS = 1_200;
+
+function amountPhrase(value: number, denominator: number): string {
+  const absoluteValue = Math.abs(value);
+  const formatted = formatScaled(absoluteValue, denominator);
+  return `${formatted} ${absoluteValue === denominator ? "unit" : "units"}`;
+}
+
+function remainingPhrase(value: number, denominator: number): string {
+  return `${amountPhrase(value, denominator)} ${Math.abs(value) === denominator ? "remains" : "remain"}`;
+}
+
 function feedbackFor(state: BridgeSessionState): string {
   if (state.phase === "exact") return "Exact fit. The crossing is ready.";
   if (state.phase === "incorrectSubmit") {
     return state.lastOutcome?.status === "partial"
-      ? `Still short by ${Math.abs(state.lastOutcome.diff)} units. The car is stuck at the unfinished bridge.`
-      : `Too long by ${Math.abs(state.lastOutcome?.diff ?? 0)} units. The car slips into the water.`;
+      ? `Still short by ${amountPhrase(state.lastOutcome.diff, state.puzzle.denominator)}. The car is stuck at the unfinished bridge.`
+      : `Too long by ${amountPhrase(state.lastOutcome?.diff ?? 0, state.puzzle.denominator)}. The car slips into the water.`;
   }
   if (state.lastOutcome?.status === "overhang") {
-    return `Too long by ${Math.abs(state.lastOutcome.diff)} units. The car slips into the water. Choose a shorter plank.`;
+    return `Too long by ${amountPhrase(state.lastOutcome.diff, state.puzzle.denominator)}. The car slips into the water. Choose a shorter plank.`;
   }
   if (state.lastOutcome?.status === "partial") {
-    return `Placed. ${state.puzzle.gapUnits - state.lastOutcome.filledAfter} units remain. Add another plank.`;
+    return `Placed. ${remainingPhrase(state.puzzle.gapUnits - state.lastOutcome.filledAfter, state.puzzle.denominator)}. Add another plank.`;
   }
   return "Choose a plank, then place it in the open span.";
 }
@@ -245,7 +257,7 @@ export default function BridgeBuilderCandidate() {
       presentationDispatchRef.current();
       return;
     }
-    const timer = window.setTimeout(() => presentationDispatchRef.current(), 600);
+    const timer = window.setTimeout(() => presentationDispatchRef.current(), CROSSING_PRESENTATION_MS);
     return () => window.clearTimeout(timer);
   }, [clock.capBridges, expired, reducedMotion, session.bridgesSolved, session.phase, session.presentationGeneration]);
 
@@ -599,7 +611,9 @@ export default function BridgeBuilderCandidate() {
 
               <p className="bb-span-copy" data-testid="bridge-span-copy" aria-live="polite">
                 The gap needs <strong>{targetSpanLabel(session.puzzle)}</strong>. You have filled <strong>{viewModel.filledUnits}</strong>.
-                {viewModel.remainingSpan > 0 ? ` ${viewModel.remainingSpan} units remain.` : " The span is closed."}
+                {viewModel.remainingSpan > 0
+                  ? ` ${remainingPhrase(viewModel.remainingSpan, session.puzzle.denominator)}.`
+                  : " The span is closed."}
               </p>
               <p className="bb-input-hint">Click a plank to add it. Dragging to the open span also works.</p>
 

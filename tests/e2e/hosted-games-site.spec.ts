@@ -12,7 +12,10 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
     "requires a deployed games-site preview",
   );
 
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto("/bridge-builder/play/");
+  expect(pageErrors).not.toContain("Identifier 'stage' has already been declared");
   await expect(page.locator(".static-game-frame")).toBeVisible();
 
   const iframe = page.locator('iframe[title="Bridge Builder game"]');
@@ -25,6 +28,9 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
   await frame.getByTestId("bridge-start").click();
   await expect(frame.locator("canvas")).toHaveCount(1);
   await expect(frame.getByTestId("renderer-status")).toHaveText("Canvas ready");
+  await expect(frame.getByTestId("phaser-render-status")).toHaveText(
+    "Phaser rendering surface ready.",
+  );
   await expect(frame.getByTestId("bridge-dom-mirror")).toBeVisible();
 
   // Exercise the actual candidate inside the hosted frame, not only the shell.

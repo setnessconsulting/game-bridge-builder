@@ -540,7 +540,7 @@ export class BridgeSceneController {
       scene.tweens.add({
         targets: this.successMarker,
         x: markerEnd,
-        duration: 600,
+        duration: 1_000,
         ease: "Sine.easeInOut",
       });
     }
@@ -591,7 +591,7 @@ export class BridgeSceneController {
         targets: car,
         x: parkedX,
         y: baseline - 3,
-        duration: 720,
+        duration: 1_000,
         ease: "Sine.easeInOut",
       });
       return;
@@ -604,7 +604,7 @@ export class BridgeSceneController {
         y: waterY + carHeight,
         angle: 72,
         alpha: 0.08,
-        duration: 680,
+        duration: 900,
         ease: "Cubic.easeIn",
       });
       return;

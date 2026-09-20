@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   BridgeIntent,
   BridgeIntentAction,
@@ -25,7 +25,13 @@ export default function BridgeCanvas(props: Props) {
   const portRef = useRef<PhaserBridgeRendererPort | null>(null);
   const lastResizeRef = useRef<{ width: number; height: number } | null>(null);
   const propsRef = useRef(props);
+  const [rendererStatus, setRendererStatus] = useState<BridgeRendererStatus>("loading");
   propsRef.current = props;
+
+  function reportStatus(status: BridgeRendererStatus): void {
+    setRendererStatus(status);
+    propsRef.current.onStatusChange?.(status);
+  }
 
   useEffect(() => {
     const parent = parentRef.current;
@@ -35,7 +41,7 @@ export default function BridgeCanvas(props: Props) {
     const unsubscribe = port.onIntent((intent) => propsRef.current.onIntent(intent));
     const options: BridgeRendererPortOptions = {
       createIntent: (action, context) => propsRef.current.createIntent(action, context),
-      onStatusChange: (status) => propsRef.current.onStatusChange?.(status),
+      onStatusChange: reportStatus,
       onVersionSkew: (rendererVersion, viewModelVersion) =>
         propsRef.current.onVersionSkew?.(rendererVersion, viewModelVersion),
       onInvalidIntent: (reason) => propsRef.current.onInvalidIntent?.(reason),
@@ -45,7 +51,7 @@ export default function BridgeCanvas(props: Props) {
       .then(() => port.setPaused(Boolean(propsRef.current.paused)))
       .catch(() => {
         // The accessible DOM mirror remains live when the optional canvas fails.
-        propsRef.current.onStatusChange?.("failed");
+        reportStatus("failed");
       });
 
     const observer =
@@ -88,8 +94,12 @@ export default function BridgeCanvas(props: Props) {
       data-responsive={props.viewModel.responsive}
       data-paused={props.paused ? "true" : "false"}
     >
-      <p className="sr-only" data-testid="phaser-render-status">
-        Phaser rendering surface loading.
+      <p className="sr-only" data-testid="phaser-render-status" role="status" aria-live="polite">
+        {rendererStatus === "ready"
+          ? "Phaser rendering surface ready."
+          : rendererStatus === "failed"
+            ? "Phaser rendering surface unavailable. Accessible bridge view active."
+            : "Phaser rendering surface loading."}
       </p>
     </div>
   );
