@@ -13,6 +13,7 @@ const contentTypes = new Map([
   [".html", "text/html"],
   [".js", "text/javascript"],
   [".json", "application/json"],
+  [".png", "image/png"],
   [".svg", "image/svg+xml"],
   [".wasm", "application/wasm"],
   [".woff2", "font/woff2"],
