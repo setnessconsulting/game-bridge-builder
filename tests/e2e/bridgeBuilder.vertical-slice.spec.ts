@@ -88,8 +88,9 @@ test.describe("Bridge Builder qualification vertical slice", () => {
 
   test("pause uses honest player copy and freezes the Phaser surface", async ({ page }) => {
     await page.getByRole("button", { name: "Pause", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Paused — the clock is waiting." })).toBeVisible();
-    await expect(page.getByRole("dialog", { name: "Game paused" })).toContainText("Up to 60 seconds of pause.");
+    await expect(page.getByRole("heading", { name: "Paused." })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Game paused" })).toContainText("The clock is stopped while this is on screen.");
+    await expect(page.getByRole("dialog", { name: "Game paused" })).toContainText("Up to 60 seconds of pause left.");
     await expect(page.getByTestId("bridge-phaser-canvas-host")).toHaveAttribute("data-paused", "true");
     await page.getByRole("button", { name: "Resume bridge", exact: true }).click();
     await expect(page.getByTestId("bridge-phaser-canvas-host")).toHaveAttribute("data-paused", "false");
@@ -127,9 +128,11 @@ test.describe("Bridge Builder qualification vertical slice", () => {
   test("shows recoverable overfill feedback", async ({ page }) => {
     await page.getByTestId("piece-plank-7").click();
     await expect(page.getByTestId("placed-plank-7")).toBeVisible();
-    await page.getByTestId("piece-plank-5").click();
+    // GAME-302: oversized planks are aria-disabled but still teach on attempt.
+    await page.getByTestId("piece-plank-5").click({ force: true });
     await expect(page.getByTestId("bridge-vehicle")).toHaveAttribute("data-state", "falling");
-    await expect(page.getByTestId("bridge-feedback")).toContainText("Too long by 2 units");
+    await expect(page.getByTestId("bridge-feedback")).toContainText("too long for 3 units left", { ignoreCase: true });
+    await expect(page.getByTestId("bridge-feedback")).toContainText("stick out by 2 units", { ignoreCase: true });
     await expect(page.getByTestId("bridge-reset")).toBeEnabled();
   });
 

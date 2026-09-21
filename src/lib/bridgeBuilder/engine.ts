@@ -45,16 +45,68 @@ export function splitPieceValue(units: number): [number, number] | null {
   return [left, units - left];
 }
 
+/**
+ * GAME-306: engine-owned second-construction scoring table (UX MAJ-22 /
+ * PRD Q-22). Both the bonus and the offer rule live here — never in UI copy.
+ *
+ * - Bonus: a second (alternate-fill) construction scores `+5` (base).
+ * - Offer rate: at most every 3rd solved bridge (`bridgesSolved % 3 === 0`,
+ *   i.e. ~33% long-run) may offer, so the measured offer share over solvable
+ *   multi-solution puzzles stays `<= 40%` (Q-10 / Q-22). The host additionally
+ *   suppresses the card at round end and inside the earned break, which can
+ *   only lower the measured rate further.
+ */
+export const SECOND_BUILD_POINTS = 5;
+export const SECOND_BUILD_OFFER_MODULUS = 3;
+export const SECOND_BUILD_OFFER_RATE_MAX = 0.4;
+
 export function scorePuzzle(input: {
   hintLevelMax: 0 | 1 | 2 | 3;
   secondBuild: boolean;
   /** Number of exact-fit bridges already solved in this session. */
   streakBefore?: number;
 }): number {
-  const base = input.secondBuild ? 5 : 10;
+  const base = input.secondBuild ? SECOND_BUILD_POINTS : 10;
   const zeroHintBonus = !input.secondBuild && input.hintLevelMax === 0 ? 2 : 0;
   const streakBonus = (input.streakBefore ?? 0) >= 3 ? 1 : 0;
   return base + zeroHintBonus + streakBonus;
+}
+
+/**
+ * GAME-306: engine-authoritative second-construction offer rule.
+ * `bridgesSolved` is the count AFTER the just-completed solve (1-indexed).
+ * Returns true only for solvable multi-solution puzzles on the capped share.
+ * Host-level suppression (round end, earned break) is applied by the caller
+ * via `canShowSecondOffer` — it is not part of this puzzle-level rule.
+ */
+export function shouldOfferSecondBuild(input: {
+  solutionCount: number;
+  supportsSecondConstruction: boolean;
+  secondActive: boolean;
+  bridgesSolved: number;
+}): boolean {
+  if (input.secondActive) return false;
+  if (!input.supportsSecondConstruction) return false;
+  if (input.solutionCount < 2) return false;
+  if (input.bridgesSolved <= 0) return false;
+  return input.bridgesSolved % SECOND_BUILD_OFFER_MODULUS === 0;
+}
+
+/**
+ * GAME-306: host-level suppression for the second-construction card.
+ * Never shown at round end (`expired` or bridge cap reached) and never inside
+ * the earned break — even when the puzzle-level rule above returns true.
+ */
+export function canShowSecondOffer(input: {
+  offered: boolean;
+  expired: boolean;
+  capReached: boolean;
+  isBreak: boolean;
+}): boolean {
+  if (!input.offered) return false;
+  if (input.isBreak) return false;
+  if (input.expired || input.capReached) return false;
+  return true;
 }
 
 export function summarizeRound(records: readonly AttemptRecord[]): RoundSummary {
@@ -102,4 +154,42 @@ export function coachingFor(
 
 export function formatDiff(units: number, denominator: number): string {
   return formatScaled(units, denominator);
+}
+
+/**
+ * GAME-302: engine-authoritative oversize check for tray affordances.
+ * Presentation must call this (never duplicate gap arithmetic) to decide
+ * whether a plank exceeds the remaining span before commit.
+ *
+ * - `remaining` is gapUnits - filledUnits (may be <= 0 once closed/overfilled).
+ * - `excess` is how far past the gap this placement would land (>0 only when
+ *   filledAfter > gapUnits).
+ * - `wouldOverhang` is true exactly when evaluatePlacement would reject with
+ *   status "overhang" (i.e. excess beyond any recoverable shim allowance).
+ * Negative shims never count as oversized.
+ */
+export interface OversizePreview {
+  remaining: number;
+  excess: number;
+  filledAfter: number;
+  status: PlacementOutcome["status"];
+  wouldOverhang: boolean;
+}
+
+export function previewPlacementFit(
+  puzzle: Pick<BridgePuzzle, "gapUnits">,
+  filledUnits: number,
+  pieceUnits: number,
+  options: PlacementOptions = {}
+): OversizePreview {
+  const outcome = evaluatePlacement(puzzle, filledUnits, pieceUnits, options);
+  const remaining = puzzle.gapUnits - filledUnits;
+  const excess = outcome.filledAfter > puzzle.gapUnits ? outcome.filledAfter - puzzle.gapUnits : 0;
+  return {
+    remaining,
+    excess,
+    filledAfter: outcome.filledAfter,
+    status: outcome.status,
+    wouldOverhang: outcome.status === "overhang",
+  };
 }

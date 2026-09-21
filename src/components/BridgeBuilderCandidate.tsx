@@ -21,12 +21,17 @@ import { createSessionSink } from "@/lib/bridgeBuilder/telemetry";
 import { createBridgeLayout } from "@/lib/bridgeBuilder/layout";
 import {
   applyBridgeIntent,
+  beginSecondBuild,
   createBridgeSession,
   type BridgeSessionState,
   type BridgeSessionEffect,
 } from "@/lib/bridgeBuilder/session";
 import { availableTray, compositionUnits, maxShimAbs } from "@/lib/bridgeBuilder/exactness";
-import { previewPlacementFit } from "@/lib/bridgeBuilder/engine";
+import {
+  SECOND_BUILD_POINTS,
+  canShowSecondOffer,
+  previewPlacementFit,
+} from "@/lib/bridgeBuilder/engine";
 import {
   amountPhrase,
   tooLongForCopy,
@@ -54,6 +59,17 @@ function lastPlaced(state: BridgeSessionState): Piece | undefined {
 }
 
 const CROSSING_PRESENTATION_MS = 1_200;
+// GAME-306: second-construction card lifetime (UX MAJ-22). This is a
+// lifetime, not a gate — the next puzzle advances on its normal 900–1500 ms
+// schedule and the card auto-dismisses without ever blocking pacing.
+const SECOND_BUILD_OFFER_LIFETIME_MS = 5_000;
+
+interface SecondBuildOffer {
+  puzzle: BridgePuzzle;
+  puzzleIndex: number;
+  solveNumber: number;
+  key: string;
+}
 
 function remainingPhrase(value: number, denominator: number): string {
   return `${amountPhrase(value, denominator)} ${Math.abs(value) === denominator ? "remains" : "remain"}`;
@@ -203,9 +219,22 @@ export default function BridgeBuilderCandidate() {
   const [rendererStatus, setRendererStatus] = useState<"loading" | "ready" | "failed">("loading");
   // GAME-302: hover/focus preview target for soft overhang affordance.
   const [hoveredPieceId, setHoveredPieceId] = useState<string | null>(null);
+  // GAME-297: HTML5 drag lift. Presentation only — passed as
+  // draggingPieceId so Phaser and DOM share one dragged vocabulary.
+  const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null);
   // GAME-302: increments on every refused (overhang) place attempt so repeated
   // identical refusals still produce visible + announced feedback (no silent no-op).
   const [deniedPulse, setDeniedPulse] = useState(0);
+  // GAME-306: non-blocking inline second-construction offer. Independent of
+  // the session puzzle so it outlives the 900–1500 ms transition to the next
+  // bridge (lifetime, not a gate). Accept reloads the solved puzzle via
+  // `beginSecondBuild`; decline/timeout only dismisses the card.
+  const [secondOffer, setSecondOffer] = useState<SecondBuildOffer | null>(null);
+  // GAME-306: position in `roundPuzzles`, tracked separately from
+  // `bridgesSolved` because a second construction counts as a solved bridge
+  // without consuming a new puzzle.
+  const [puzzleCursor, setPuzzleCursor] = useState(0);
+  const secondOfferTimerRef = useRef<number | null>(null);
   const soundRef = useRef<AudioContext | null>(null);
   const finishCuePlayedRef = useRef(false);
   // GAME-303: layout hook so timeout / round-complete feedback is never left
@@ -246,6 +275,7 @@ export default function BridgeBuilderCandidate() {
         muted,
         numberFace,
         crossing: session.phase === "exact" && !reducedMotion,
+        draggingPieceId,
         placementPreviewPieceId: hoveredPieceId,
         session: {
           mode: clock.mode,
@@ -260,7 +290,7 @@ export default function BridgeBuilderCandidate() {
           expired,
         },
       }),
-    [clock, expired, hoveredPieceId, intentContext, layout, muted, numberFace, reducedMotion, relaxed, session],
+    [clock, draggingPieceId, expired, hoveredPieceId, intentContext, layout, muted, numberFace, reducedMotion, relaxed, session],
   );
   const availablePieces = viewModel.pieceTray;
   const selectedPiece = session.selectedPieceId
@@ -340,7 +370,10 @@ export default function BridgeBuilderCandidate() {
   useEffect(() => {
     if (session.phase !== "awaitingContinue" || expired || session.bridgesSolved >= clock.capBridges) return;
 
-    const nextPuzzleIndex = session.bridgesSolved;
+    // GAME-306: advance by round position, not by solve count — a second
+    // construction counts as a solved bridge without consuming a new puzzle.
+    const fromPuzzleId = session.puzzle.id;
+    const nextPuzzleIndex = puzzleCursor + 1;
     const nextPuzzle = roundPuzzles[nextPuzzleIndex];
     if (!nextPuzzle) return;
 
@@ -352,8 +385,9 @@ export default function BridgeBuilderCandidate() {
     setIntentContext(nextContext);
     setRendererStatus("loading");
     clearIntentIssue();
+    setPuzzleCursor(nextPuzzleIndex);
     setSession((previous) => {
-      if (previous.phase !== "awaitingContinue" || previous.bridgesSolved !== nextPuzzleIndex) {
+      if (previous.phase !== "awaitingContinue" || previous.puzzle.id !== fromPuzzleId) {
         return previous;
       }
       return createBridgeSession(nextPuzzle, {
@@ -365,11 +399,51 @@ export default function BridgeBuilderCandidate() {
       });
     });
     setAnnouncement(questionText(nextPuzzle, nextPuzzleIndex + 1));
-  }, [clock.capBridges, expired, roundPuzzles, session.bridgesSolved, session.phase]);
+  }, [clock.capBridges, expired, puzzleCursor, roundPuzzles, session.bridgesSolved, session.phase, session.puzzle.id]);
+
+  // GAME-306: the 5 s offer lifetime. Fires once per card, never extends
+  // pacing, never re-fires for the same puzzle.
+  useEffect(() => {
+    if (!secondOffer) return;
+    const offer = secondOffer;
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+    }
+    secondOfferTimerRef.current = window.setTimeout(() => {
+      telemetryRef.current.emit("second_build", {
+        accepted: false,
+        timedOut: true,
+        puzzleId: offer.puzzle.id,
+      });
+      setSecondOffer((current) => (current?.key === offer.key ? null : current));
+      secondOfferTimerRef.current = null;
+    }, SECOND_BUILD_OFFER_LIFETIME_MS);
+    return () => {
+      if (secondOfferTimerRef.current !== null) {
+        window.clearTimeout(secondOfferTimerRef.current);
+        secondOfferTimerRef.current = null;
+      }
+    };
+  }, [secondOffer]);
+
+  // GAME-306: never at round end — the card clears the moment the round
+  // completes instead of lingering over the summary.
+  useEffect(() => {
+    if (roundComplete && secondOffer) {
+      if (secondOfferTimerRef.current !== null) {
+        window.clearTimeout(secondOfferTimerRef.current);
+        secondOfferTimerRef.current = null;
+      }
+      setSecondOffer(null);
+    }
+  }, [roundComplete, secondOffer]);
 
   useEffect(() => () => {
     if (retryNoticeTimerRef.current !== null) {
       window.clearTimeout(retryNoticeTimerRef.current);
+    }
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
     }
     closeBridgeSoundContext(soundRef);
   }, []);
@@ -435,6 +509,38 @@ export default function BridgeBuilderCandidate() {
     }, 500);
   }
 
+  // GAME-306: surface the session `offerSecondBuild` effect as a
+  // non-blocking inline card. Host-level suppression (round end, earned
+  // break) can only hide the card — the session effect itself is untouched.
+  function maybeShowSecondOffer(
+    next: BridgeSessionState,
+    offered: boolean,
+    solvedPuzzleIndex: number,
+  ): void {
+    if (!offered) return;
+    const nextCapReached = next.bridgesSolved >= clock.capBridges;
+    const nextExpired = (!relaxed && (clock.expired || clock.remainingMs === 0)) || nextCapReached;
+    if (!canShowSecondOffer({
+      offered: true,
+      expired: nextExpired,
+      capReached: nextCapReached,
+      isBreak: clock.mode === "break",
+    })) {
+      return;
+    }
+    const offer: SecondBuildOffer = {
+      puzzle: next.puzzle,
+      puzzleIndex: solvedPuzzleIndex,
+      solveNumber: next.bridgesSolved,
+      key: `${next.puzzle.id}#${next.bridgesSolved}`,
+    };
+    telemetryRef.current.emit("second_build", {
+      offered: true,
+      puzzleId: next.puzzle.id,
+    });
+    setSecondOffer(offer);
+  }
+
   function dispatch(intent: BridgeIntent) {
     const validation = validateBridgeIntent(intent, {
       ...intentContextRef.current,
@@ -452,6 +558,11 @@ export default function BridgeBuilderCandidate() {
     const result = applyBridgeIntent(session, validation.intent);
     playEffects(result.effects);
     setSession(result.state);
+    maybeShowSecondOffer(
+      result.state,
+      result.effects.some((effect) => effect.type === "offerSecondBuild"),
+      currentPuzzleIndex,
+    );
     // GAME-302: every refused overhang must pulse visible + announced feedback.
     if (result.state.lastOutcome?.status === "overhang") {
       setDeniedPulse((pulse) => pulse + 1);
@@ -468,6 +579,7 @@ export default function BridgeBuilderCandidate() {
   function dispatchSequence(actions: readonly BridgeIntentAction[]) {
     if (!hasStarted || expired || session.phase === "exact") return;
     let next = session;
+    let offered = false;
     for (const action of actions) {
       const intent = createIntent(action, intentContextRef.current);
       const validation = validateBridgeIntent(intent, {
@@ -482,16 +594,72 @@ export default function BridgeBuilderCandidate() {
       if (validation.intent.type === "selectPiece") playCue("pickup");
       const result = applyBridgeIntent(next, validation.intent);
       playEffects(result.effects);
+      if (result.effects.some((effect) => effect.type === "offerSecondBuild")) {
+        offered = true;
+      }
       next = result.state;
     }
     clearIntentIssue();
     setSession(next);
+    maybeShowSecondOffer(next, offered, currentPuzzleIndex);
     // GAME-302: refused overhang (including select+place in one click) must
     // never be a silent no-op — pulse visible + announced feedback.
     if (next.lastOutcome?.status === "overhang") {
       setDeniedPulse((pulse) => pulse + 1);
     }
     setAnnouncement(feedbackFor(next));
+  }
+
+  // GAME-306: accept starts a second construction on the solved puzzle via
+  // the existing session path. The card may have outlived the transition to
+  // the next bridge, so the offer puzzle is reloaded explicitly.
+  function acceptSecondOffer(): void {
+    if (!secondOffer || roundComplete) return;
+    const offer = secondOffer;
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+      secondOfferTimerRef.current = null;
+    }
+    setSecondOffer(null);
+    telemetryRef.current.emit("second_build", { accepted: true, puzzleId: offer.puzzle.id });
+    const nextContext = {
+      ...intentContextRef.current,
+      generation: intentContextRef.current.generation + 1,
+    };
+    intentContextRef.current = nextContext;
+    setIntentContext(nextContext);
+    setRendererStatus("loading");
+    clearIntentIssue();
+    setPuzzleCursor(offer.puzzleIndex);
+    setHoveredPieceId(null);
+    setDraggingPieceId(null);
+    setDeniedPulse(0);
+    setSession((previous) => beginSecondBuild(createBridgeSession(offer.puzzle, {
+      score: previous.score,
+      starsTotal: previous.starsTotal,
+      bridgesSolved: previous.bridgesSolved,
+      maxBridges: previous.maxBridges,
+      sessionSeconds: previous.sessionSeconds,
+    })));
+    setAnnouncement("Same gap, different planks. Build it another way!");
+  }
+
+  // GAME-306: warm decline — as warm as the accept, never shaming. Dismissal
+  // only hides the card; the next bridge already advanced (or advances) on
+  // its normal schedule, so pacing is never blocked.
+  function declineSecondOffer(timedOut: boolean): void {
+    if (!secondOffer) return;
+    const offer = secondOffer;
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+      secondOfferTimerRef.current = null;
+    }
+    setSecondOffer(null);
+    telemetryRef.current.emit("second_build", {
+      accepted: false,
+      timedOut,
+      puzzleId: offer.puzzle.id,
+    });
   }
 
   function togglePause() {
@@ -518,6 +686,13 @@ export default function BridgeBuilderCandidate() {
     } else if (event.key.toLowerCase() === "r") {
       setAnnouncement(feedbackFor(session));
     } else if (event.key === "Escape") {
+      // GAME-306: Esc dismisses the non-modal second-build card instead of
+      // opening pause — the card is never modal and never traps focus.
+      if (secondOffer) {
+        event.preventDefault();
+        declineSecondOffer(false);
+        return;
+      }
       event.preventDefault();
       togglePause();
     }
@@ -525,6 +700,7 @@ export default function BridgeBuilderCandidate() {
 
   function handleDrop(event: DragEvent<HTMLButtonElement>) {
     event.preventDefault();
+    setDraggingPieceId(null);
     const pieceId = event.dataTransfer.getData("text/plain");
     const piece = session.puzzle.tray.find((candidate) => candidate.id === pieceId);
     if (piece) {
@@ -551,6 +727,7 @@ export default function BridgeBuilderCandidate() {
     setPaused(false);
     setHasStarted(true);
     setHoveredPieceId(null);
+    setDraggingPieceId(null);
     setDeniedPulse(0);
     setAnnouncement(questionText(session.puzzle, 1));
   }
@@ -574,6 +751,13 @@ export default function BridgeBuilderCandidate() {
     intentSequenceRef.current = 0;
     lastAcceptedSequenceRef.current = 0;
     setRoundPuzzles(nextPuzzles);
+    setPuzzleCursor(0);
+    // GAME-306: a new round never inherits a previous offer card or timer.
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+      secondOfferTimerRef.current = null;
+    }
+    setSecondOffer(null);
     setSession(createBridgeSession(firstPuzzle));
     setClock(createBridgeClock({ nowMs: performance.now() }));
     setPaused(false);
@@ -582,6 +766,7 @@ export default function BridgeBuilderCandidate() {
     clearIntentIssue();
     setRendererStatus("loading");
     setHoveredPieceId(null);
+    setDraggingPieceId(null);
     setDeniedPulse(0);
     setAnnouncement(questionText(firstPuzzle, 1));
   }
@@ -727,6 +912,48 @@ export default function BridgeBuilderCandidate() {
             )}
           </div>
 
+          {/* GAME-306: non-blocking inline second-construction offer (UX MAJ-22,
+              J1.6). Anchored beside the play surface, never modal, never a
+              gate: the next bridge stays playable while the card is visible
+              and the 5 s auto-dismiss is its lifetime. Copy names "another"
+              valid fill without implying one canonical answer. */}
+          {secondOffer && !roundComplete ? (
+            <section
+              className="bb-second-offer"
+              data-testid="second-build-offer"
+              data-puzzle-id={secondOffer.puzzle.id}
+              aria-label="Build it another way?"
+              role="status"
+            >
+              <div className="bb-second-offer-card">
+                <strong data-testid="second-build-offer-title">
+                  Build it another way? +{SECOND_BUILD_POINTS}
+                </strong>
+                <p className="microcopy" data-testid="second-build-offer-copy">
+                  Same gap — different planks can also fit. Any exact fit counts.
+                </p>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    type="button"
+                    className="button primary"
+                    data-testid="second-build-accept"
+                    onClick={acceptSecondOffer}
+                  >
+                    Try another way
+                  </button>
+                  <button
+                    type="button"
+                    className="button"
+                    data-testid="second-build-decline"
+                    onClick={() => declineSecondOffer(false)}
+                  >
+                    Nice — next bridge
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <div className="bb-candidate-board">
             <BridgeCanvas
               key={intentContext.generation}
@@ -743,7 +970,8 @@ export default function BridgeBuilderCandidate() {
                   rendererVersion,
                   viewModelVersion,
                 });
-                setIntentIssue("This display version needs a refresh. Your bridge can still be played in the accessible view.");
+                // GAME-297: player-friendly wording; technical versions stay in telemetry.
+                setIntentIssue("The picture needs a refresh — your bridge is safe in the list below.");
               }}
               onInvalidIntent={(reason) => rejectIntent(reason)}
             />
@@ -787,6 +1015,12 @@ export default function BridgeBuilderCandidate() {
               >
                 <span className="bb-candidate-bank bb-candidate-bank-left" aria-hidden="true" />
                 <span className="bb-candidate-bank bb-candidate-bank-right" aria-hidden="true" />
+                {/* GAME-297: state glyphs are decorative (aria-hidden); the
+                    live text + data-state carry semantics. Same vocabulary as
+                    Phaser: ◌ open · ✓ exact · ⚠ over. */}
+                <span className="bb-span-state-glyph" data-testid="bridge-state-glyph" aria-hidden="true">
+                  {viewModel.exact ? "✓" : viewModel.overfill || showOverhangPreview ? "⚠" : "◌"}
+                </span>
                 <span
                   className={`bb-candidate-vehicle bb-vehicle-${currentVehicleState}`}
                   data-testid="bridge-vehicle"
@@ -795,6 +1029,23 @@ export default function BridgeBuilderCandidate() {
                 >
                   <img src={carSpriteUrl} alt="" />
                 </span>
+                {/* GAME-297: crossing payoff visuals. Static shapes in both
+                    motion modes (CSS kills the animation under reduced motion);
+                    audio payoff is the DOM sound cue with a mute guard. */}
+                {viewModel.exact ? (
+                  <span className="bb-celebration" data-testid="bridge-celebration" aria-hidden="true">
+                    <span className="bb-celebration-ring bb-celebration-ring-1" />
+                    <span className="bb-celebration-ring bb-celebration-ring-2" />
+                    <span className="bb-celebration-flag">✓</span>
+                  </span>
+                ) : null}
+                {viewModel.overfill ? (
+                  <span className="bb-splash" data-testid="bridge-splash" aria-hidden="true">
+                    <span className="bb-splash-ring bb-splash-ring-1" />
+                    <span className="bb-splash-ring bb-splash-ring-2" />
+                    <span className="bb-splash-ring bb-splash-ring-3" />
+                  </span>
+                ) : null}
                 {viewModel.placed.map((piece) => (
                   <button
                     key={piece.id}
@@ -803,6 +1054,7 @@ export default function BridgeBuilderCandidate() {
                     data-testid={`placed-${piece.id}`}
                     aria-label={`Remove ${pieceLabel(piece)}`}
                     disabled={expired || session.phase === "exact"}
+                    style={{ width: `${Math.max(56, Math.round(piece.widthPx))}px` } as CSSProperties}
                     onClick={() => dispatchAction({ type: "removePiece", pieceId: piece.id })}
                   >
                     <PieceFace units={piece.units} label={String(piece.units)} mode={numberFace} />
@@ -820,7 +1072,7 @@ export default function BridgeBuilderCandidate() {
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={handleDrop}
                 >
-                  {viewModel.remainingSpan > 0 ? `${viewModel.remainingSpan} open` : "Closed"}
+                  {viewModel.remainingSpan > 0 ? `${viewModel.remainingSpan} open` : "Closed ✓"}
                 </button>
                 {showOverhangPreview && previewTarget && previewExcess != null ? (
                   <span
@@ -844,17 +1096,26 @@ export default function BridgeBuilderCandidate() {
                 {availablePieces.map((piece) => {
                   const oversized = piece.oversized;
                   const teachId = `too-long-${piece.id}`;
+                  const locked = expired || session.phase === "exact";
+                  const dragging = draggingPieceId === piece.id;
+                  // GAME-297: length-proportional bar (percent of longest tray
+                  // piece). Grid cells stay equal for touch targets; the wood
+                  // bar inside carries the proportional cue, matching Phaser.
+                  const longestTrayUnits = Math.max(1, ...availablePieces.map((candidate) => Math.abs(candidate.units)));
+                  const barPct = Math.max(18, Math.round((Math.abs(piece.units) / longestTrayUnits) * 100));
                   return (
                     <button
                       key={piece.id}
                       type="button"
-                      className={`bb-candidate-piece ${piece.selected ? "is-selected" : ""} ${piece.focused ? "is-focused" : ""} ${oversized ? "is-too-long" : ""}`}
+                      className={`bb-candidate-piece ${piece.selected ? "is-selected" : ""} ${piece.focused ? "is-focused" : ""} ${oversized ? "is-too-long" : ""} ${dragging ? "is-dragging" : ""} ${locked ? "is-disabled" : ""}`}
                       data-testid={`piece-${piece.id}`}
                       data-piece-id={piece.id}
                       data-units={piece.units}
                       data-face-mode={numberFace}
                       data-oversized={oversized ? "true" : "false"}
                       data-excess-units={piece.excessUnits ?? ""}
+                      data-dragging={dragging ? "true" : "false"}
+                      data-locked={locked ? "true" : "false"}
                       draggable={!expired}
                       disabled={expired}
                       aria-disabled={oversized && !expired ? "true" : undefined}
@@ -870,9 +1131,14 @@ export default function BridgeBuilderCandidate() {
                       onMouseLeave={() => setHoveredPieceId((current) => (current === piece.id ? null : current))}
                       onFocus={() => setHoveredPieceId(piece.id)}
                       onBlur={() => setHoveredPieceId((current) => (current === piece.id ? null : current))}
-                      onDragStart={(event) => event.dataTransfer.setData("text/plain", piece.id)}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("text/plain", piece.id);
+                        setDraggingPieceId(piece.id);
+                      }}
+                      onDragEnd={() => setDraggingPieceId((current) => (current === piece.id ? null : current))}
                     >
                       <span className="bb-piece-grain" aria-hidden="true"></span>
+                      <span className="bb-piece-bar" aria-hidden="true" style={{ width: `${barPct}%` } as CSSProperties} />
                       <PieceFace units={piece.units} label={piece.label} mode={numberFace} />
                       {oversized ? (
                         <span
@@ -957,11 +1223,19 @@ export default function BridgeBuilderCandidate() {
             <div className="bb-candidate-pause" role="dialog" aria-modal="true" aria-label="Game paused">
               <div className="bb-candidate-pause-card">
                 <p className="eyebrow">Paused</p>
-                <h3>Paused — the clock is waiting.</h3>
+                {/* GAME-297: honest pause copy — never implies extra time.
+                    With budget left the clock is stopped; at 0 the clock keeps
+                    running and pausing adds nothing. */}
+                <h3>Paused.</h3>
                 <p>
                   {clock.pauseBudgetRemainingMs > 0
-                    ? `Up to ${Math.ceil(clock.pauseBudgetRemainingMs / 1000)} seconds of pause.`
-                    : "No pause time remains; resume to keep going."}
+                    ? "The clock is stopped while this is on screen."
+                    : "The clock keeps running while paused."}
+                </p>
+                <p className="muted-label">
+                  {clock.pauseBudgetRemainingMs > 0
+                    ? `Up to ${Math.ceil(clock.pauseBudgetRemainingMs / 1000)} seconds of pause left. Pausing never adds extra time.`
+                    : "Pause time is used up — pausing never adds extra time."}
                 </p>
                 <button type="button" className="button primary" onClick={togglePause}>Resume bridge</button>
               </div>

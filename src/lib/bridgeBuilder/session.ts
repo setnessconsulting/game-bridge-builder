@@ -20,6 +20,7 @@ import {
   evaluatePlacement,
   formatDiff,
   scorePuzzle,
+  shouldOfferSecondBuild,
   starsFor,
 } from "./engine";
 import type {
@@ -291,10 +292,16 @@ function resolveExactFit(
   });
 
   const bridgesSolved = state.bridgesSolved + 1;
-  const offerSecond =
-    !state.secondActive &&
-    state.puzzle.supportsSecondConstruction &&
-    bridgesSolved % 2 === 0;
+  // GAME-306: puzzle-level offer rule lives in the engine scoring table
+  // (<=40% of solvable multi-solution puzzles). Host-level suppression
+  // (round end, earned break) is applied by the React host via
+  // `canShowSecondOffer` before rendering the card.
+  const offerSecond = shouldOfferSecondBuild({
+    solutionCount: state.puzzle.solutionCount,
+    supportsSecondConstruction: state.puzzle.supportsSecondConstruction,
+    secondActive: state.secondActive,
+    bridgesSolved,
+  });
 
   const next: BridgeSessionState = {
     ...state,

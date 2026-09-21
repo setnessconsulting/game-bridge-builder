@@ -23,6 +23,9 @@ export const CANDIDATE_PUZZLE: BridgePuzzle = {
   presetPlaced: [],
   parPieces: 2,
   solutionCount: 2,
-  supportsSecondConstruction: false,
+  // GAME-306: the qualification slice is multi-solution (4+6 and 3+7 both
+  // close the 10-unit gap), so the production candidate opts into the
+  // session second-construction path instead of forcing it off.
+  supportsSecondConstruction: true,
   hasEquivalenceRelation: false,
 };

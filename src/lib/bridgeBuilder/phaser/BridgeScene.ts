@@ -73,6 +73,7 @@ type GraphicsLike = {
   fillStyle: (color: number, alpha?: number) => GraphicsLike;
   fillRect: (x: number, y: number, w: number, h: number) => GraphicsLike;
   fillCircle: (x: number, y: number, radius: number) => GraphicsLike;
+  strokeCircle: (x: number, y: number, radius: number) => GraphicsLike;
   lineStyle: (width: number, color: number, alpha?: number) => GraphicsLike;
   lineBetween: (x1: number, y1: number, x2: number, y2: number) => GraphicsLike;
   strokeRect: (x: number, y: number, w: number, h: number) => GraphicsLike;
@@ -157,20 +158,37 @@ function drawDashedLine(
   }
 }
 
+export interface PlankPresentationOptions {
+  selected?: boolean;
+  placed?: boolean;
+  overfill?: boolean;
+  /** Lifted while dragged (GAME-133 sets draggingPieceId; decorative only). */
+  dragging?: boolean;
+  /** Dashed ghost of a would-be placement; never interactive. */
+  preview?: boolean;
+  /** Locked tray (expired/exact): dimmed + hatched, never color alone. */
+  disabled?: boolean;
+}
+
 function drawPlank(
   graphics: GraphicsLike,
   x: number,
   centerY: number,
   width: number,
   height: number,
-  options: { selected?: boolean; placed?: boolean; overfill?: boolean } = {},
+  options: PlankPresentationOptions = {},
 ): void {
   const safeWidth = Math.max(24, width);
   const halfHeight = height / 2;
   const endRadius = Math.min(halfHeight, Math.max(7, Math.min(14, safeWidth / 8)));
   const bodyX = x + endRadius;
   const bodyWidth = Math.max(1, safeWidth - endRadius * 2);
-  const bodyY = centerY - halfHeight;
+  // Dragging reads as lifted: shadow drops further, plank draws higher.
+  const lift = options.dragging ? -6 : 0;
+  const bodyY = centerY - halfHeight + lift;
+  const shadowAlpha = options.dragging ? 0.38 : 0.24;
+  const shadowDrop = options.dragging ? 11 : 6;
+  const bodyAlpha = options.preview ? 0.55 : options.disabled ? 0.55 : 1;
   const bodyColor = options.overfill
     ? COLORS.overfill
     : options.selected
@@ -180,21 +198,58 @@ function drawPlank(
         : COLORS.woodLight;
 
   graphics
-    .fillStyle(COLORS.woodDark, 0.24)
-    .fillRect(x + 2, bodyY + 6, safeWidth, height)
-    .fillStyle(bodyColor, 1)
+    .fillStyle(COLORS.woodDark, shadowAlpha)
+    .fillRect(x + 2, bodyY + shadowDrop, safeWidth, height)
+    .fillStyle(bodyColor, bodyAlpha)
     .fillRect(bodyX, bodyY, bodyWidth, height)
-    .fillStyle(bodyColor, 1)
-    .fillCircle(bodyX, centerY, endRadius)
-    .fillCircle(bodyX + bodyWidth, centerY, endRadius)
-    .lineStyle(options.selected ? 3 : 2, options.overfill ? COLORS.ink : COLORS.woodDark, 1)
-    .strokeRect(bodyX, bodyY, bodyWidth, height)
+    .fillStyle(bodyColor, bodyAlpha)
+    .fillCircle(bodyX, centerY + lift, endRadius)
+    .fillCircle(bodyX + bodyWidth, centerY + lift, endRadius);
+  if (options.preview || options.disabled) {
+    graphics.lineStyle(options.preview ? 2 : 2, COLORS.ink, options.preview ? 0.85 : 0.6);
+    drawDashedLine(graphics, bodyX, bodyY, bodyX + bodyWidth, bodyY, 6, 4);
+    drawDashedLine(graphics, bodyX, bodyY + height, bodyX + bodyWidth, bodyY + height, 6, 4);
+  } else {
+    graphics.lineStyle(options.dragging || options.selected ? 3 : 2, options.overfill ? COLORS.ink : COLORS.woodDark, 1)
+      .strokeRect(bodyX, bodyY, bodyWidth, height);
+  }
+  graphics
     .lineStyle(1, COLORS.woodLight, 0.7)
-    .lineBetween(bodyX + 8, centerY - 5, bodyX + bodyWidth - 8, centerY - 5)
-    .lineBetween(bodyX + 12, centerY + 5, bodyX + bodyWidth - 12, centerY + 5)
+    .lineBetween(bodyX + 8, centerY + lift - 5, bodyX + bodyWidth - 8, centerY + lift - 5)
+    .lineBetween(bodyX + 12, centerY + lift + 5, bodyX + bodyWidth - 12, centerY + lift + 5)
     .lineStyle(2, COLORS.woodDark, 0.9)
     .lineBetween(bodyX + 4, bodyY + 3, bodyX + 4, bodyY + height - 3)
     .lineBetween(bodyX + bodyWidth - 4, bodyY + 3, bodyX + bodyWidth - 4, bodyY + height - 3);
+  // Bolt dots pin placed planks to the span (geometry, not color).
+  if (options.placed && !options.preview) {
+    graphics
+      .fillStyle(COLORS.woodDark, 0.9)
+      .fillCircle(bodyX + 9, centerY + lift, 2.4)
+      .fillCircle(bodyX + bodyWidth - 9, centerY + lift, 2.4);
+  }
+  // Selection ticks at both ends: selected reads without color.
+  if (options.selected && !options.disabled) {
+    graphics
+      .lineStyle(3, COLORS.ink, 0.9)
+      .lineBetween(bodyX - 5, bodyY - 5, bodyX + 5, bodyY - 5)
+      .lineBetween(bodyX - 5, bodyY - 5, bodyX - 5, bodyY + 5)
+      .lineBetween(bodyX + bodyWidth - 5, bodyY + height + 5, bodyX + bodyWidth + 5, bodyY + height + 5)
+      .lineBetween(bodyX + bodyWidth + 5, bodyY + height - 5, bodyX + bodyWidth + 5, bodyY + height + 5);
+  }
+  // Disabled hatch: diagonal bars across the plank, never color alone.
+  if (options.disabled) {
+    graphics.lineStyle(2, COLORS.ink, 0.4);
+    for (let hx = bodyX + 6; hx < bodyX + bodyWidth - 2; hx += 12) {
+      graphics.lineBetween(hx, bodyY + height - 3, Math.min(bodyX + bodyWidth, hx + 8), bodyY + 3);
+    }
+  }
+  // Overfill cross-hatch on the plank body (matches the excess marker).
+  if (options.overfill && !options.preview) {
+    graphics.lineStyle(2, COLORS.white, 0.75);
+    for (let hx = bodyX + 4; hx < bodyX + bodyWidth - 2; hx += 10) {
+      graphics.lineBetween(hx, bodyY + 3, Math.min(bodyX + bodyWidth, hx + 7), bodyY + height - 3);
+    }
+  }
 }
 
 /**
@@ -295,12 +350,19 @@ export class BridgeSceneController {
     const centerX = scene.scale.width / 2;
 
     this.spanLabel?.setPosition(centerX, 10).setText(`Target span: ${vm.spanLabel}`);
+    // GAME-302: canvas mirrors the DOM teach copy. Math comes from the view
+    // model (engine-authoritative); canvas only formats presentation text.
+    const previewTeach = vm.previewOversize ?? (vm.selectedOversize
+      ? { pieceId: vm.selectedPieceId ?? "", ...vm.selectedOversize }
+      : null);
     this.remainingLabel?.setText(
       vm.exact
         ? "Exact fit"
         : vm.overfill
           ? "Too long"
-          : `${formatScaled(vm.remainingSpan, vm.denominator)} left · ${formatScaled(vm.filledUnits, vm.denominator)} filled`,
+          : previewTeach && vm.remainingSpan > 0
+            ? `Too long for ${formatScaled(vm.remainingSpan, vm.denominator)} left`
+            : `${formatScaled(vm.remainingSpan, vm.denominator)} left · ${formatScaled(vm.filledUnits, vm.denominator)} filled`,
     );
     this.remainingLabel?.setPosition(centerX, 34);
     this.feedbackLabel?.setText(
@@ -314,11 +376,13 @@ export class BridgeSceneController {
             : "The car slipped into the water"
           : vm.overfill
             ? "The car slipped into the water"
-            : "Build to match the target span",
+            : previewTeach && vm.remainingSpan > 0
+              ? `Would stick out by ${formatScaled(previewTeach.excessUnits, vm.denominator)} — choose a shorter plank`
+              : "Build to match the target span",
     );
     this.feedbackLabel?.setPosition(centerX, 56);
 
-    this.drawEnvironment(scene.scale.width, scene.scale.height, gapX, gapY, gapW);
+    this.drawEnvironment(scene.scale.width, scene.scale.height, gapX, gapY, gapW, vm);
     this.drawTarget(gapX, gapY, gapW, vm);
 
     this.gapRect?.destroy();
@@ -365,25 +429,60 @@ export class BridgeSceneController {
     }
 
     this.effectLayer?.clear();
+    const filledPx = clamp(Math.max(0, vm.filledUnits) * unitPx, 0, gapW);
     if (vm.overfill) {
       this.drawOverfillState(gapX, gapY, gapW, vm);
+      this.drawSplash(gapX, gapY, gapW, this.waterLineY(scene.scale.height, gapY));
+    } else if (previewTeach && vm.remainingSpan > 0) {
+      // GAME-302: soft preview — geometry (excess width) + dashed outline,
+      // not color alone. Static so reduced-motion needs no tween.
+      this.drawOverhangPreview(gapX, gapY, gapW, previewTeach.excessUnits * unitPx);
+    } else if (vm.underfill && !vm.exact && vm.remainingSpan > 0 && !vm.incorrectSubmit) {
+      this.drawUnderfillState(gapX, gapY, gapW, filledPx);
+    }
+    // Placement ghost: dashed preview of the hovered/selected tray piece in
+    // the open slot. Decorative only — no hit rect, never emits intents.
+    const ghostId = vm.placementPreviewPieceId ?? vm.selectedPieceId;
+    if (!vm.exact && !vm.overfill && ghostId && vm.remainingSpan > 0) {
+      const ghost = vm.pieceTray.find((candidate) => candidate.id === ghostId);
+      if (ghost) {
+        const ghostWidth = Math.max(24, ghost.widthPx);
+        drawPlank(this.effectLayer ?? this.fallbackGraphics(), gapX + filledPx, gapY, ghostWidth, 30, {
+          preview: true,
+        });
+      }
     }
 
+    // GAME-297: tray widths share one scale factor so planks stay
+    // length-proportional (ratios preserved; 48px floor is a presentation
+    // minimum only — math stays in engine units).
     const trayStartY = Math.min(scene.scale.height - 58, gapY + 92);
     const trayMargin = Math.max(14, Math.round(scene.scale.width * 0.04));
     const trayRowHeight = 56;
     const trayRight = scene.scale.width - trayMargin;
     const maxVisualWidth = Math.max(56, trayRight - trayMargin);
+    const maxTrayPiecePx = Math.max(1, ...vm.pieceTray.map((piece) => piece.widthPx));
+    const trayScale = Math.min(1, maxVisualWidth / Math.max(1, maxTrayPiecePx));
+    // Locked tray (expired round or completed bridge): dimmed + hatched.
+    const trayDisabled = vm.session.expired || vm.exact;
     let trayX = trayMargin;
     let trayY = trayStartY;
     for (const piece of vm.pieceTray) {
-      const visualWidth = Math.min(maxVisualWidth, Math.max(56, Math.round(piece.widthPx * 0.92)));
+      const visualWidth = Math.min(maxVisualWidth, Math.max(48, Math.round(piece.widthPx * trayScale)));
       if (trayX > trayMargin && trayX + visualWidth > trayRight) {
         trayX = trayMargin;
         trayY += trayRowHeight;
       }
       const selected = piece.selected || piece.focused;
-      drawPlank(this.pieceLayer ?? this.fallbackGraphics(), trayX, trayY, visualWidth, 30, { selected });
+      const dragging = piece.id === vm.draggingPieceId;
+      // GAME-302: oversized tray planks use the overfill fill + ⚠ glyph so the
+      // signal is never color alone. Geometry preview lives in the gap.
+      drawPlank(this.pieceLayer ?? this.fallbackGraphics(), trayX, trayY, visualWidth, 30, {
+        selected: selected && !trayDisabled,
+        overfill: piece.oversized && !trayDisabled,
+        dragging,
+        disabled: trayDisabled,
+      });
       const visualCenterX = trayX + visualWidth / 2;
       const rect = this.createHitRect(scene, visualCenterX, trayY, visualWidth, 52, piece.id, "tray");
       rect.on?.("pointerdown", () => {
@@ -395,9 +494,10 @@ export class BridgeSceneController {
         });
       });
       this.trayRects.set(piece.id, rect);
+      const face = this.pieceFace(piece.units, piece.label, piece.kind);
       this.pieceLabels.set(
         piece.id,
-        scene.add.text(visualCenterX, trayY, this.pieceFace(piece.units, piece.label, piece.kind), {
+        scene.add.text(visualCenterX, trayY, piece.oversized ? `⚠ ${face}` : face, {
           fontFamily: "system-ui, sans-serif",
           fontSize: `${clamp(Math.round(visualWidth / 8), 11, 16)}px`,
           fontStyle: "bold",
@@ -432,7 +532,14 @@ export class BridgeSceneController {
     return rect;
   }
 
-  private drawEnvironment(width: number, height: number, gapX: number, gapY: number, gapW: number): void {
+  private drawEnvironment(
+    width: number,
+    height: number,
+    gapX: number,
+    gapY: number,
+    gapW: number,
+    vm: BridgeViewModel,
+  ): void {
     const graphics = this.environmentLayer;
     if (!graphics) return;
     graphics.clear();
@@ -484,7 +591,39 @@ export class BridgeSceneController {
       .fillRect(gapX + gapW - 28, gapY + 14, 14, supportHeight)
       .fillStyle(COLORS.stone, 1)
       .fillRect(gapX + 11, gapY + 10, 20, 8)
-      .fillRect(gapX + gapW - 31, gapY + 10, 20, 8);
+      .fillRect(gapX + gapW - 31, gapY + 10, 20, 8)
+      // Anchor bolts pin the span ends (geometry, never color alone).
+      .fillStyle(COLORS.woodDark, 0.9)
+      .fillCircle(gapX + 16, gapY + 14, 2.2)
+      .fillCircle(gapX + 26, gapY + 14, 2.2)
+      .fillCircle(gapX + gapW - 26, gapY + 14, 2.2)
+      .fillCircle(gapX + gapW - 16, gapY + 14, 2.2);
+    // Span ruler ticks along the target lip (presentation only; math stays in
+    // engine units). Deterministic per layout so every reconcile matches.
+    if (vm.environment.ticksVisible && vm.layout.unitPx > 0) {
+      const step = vm.layout.unitPx;
+      graphics.lineStyle(1, COLORS.ink, 0.35);
+      for (let tickX = gapX + step; tickX < gapX + gapW - 1; tickX += step) {
+        const major = Math.round((tickX - gapX) / step) % 5 === 0;
+        graphics.lineBetween(tickX, gapY - 24, tickX, gapY - 24 + (major ? 9 : 5));
+      }
+    }
+    // Deterministic cliff speckles from the presentation seed: the same puzzle
+    // always renders the same stones. Decorative only.
+    graphics.fillStyle(COLORS.cliffShadow, 0.5);
+    let speckle = vm.renderSeed === 0 ? 0x9e3779b9 : vm.renderSeed;
+    const speckleCount = 8;
+    for (let index = 0; index < speckleCount; index += 1) {
+      speckle = (Math.imul(speckle ^ (speckle >>> 15), 2246822519) >>> 0);
+      const leftSide = index % 2 === 0;
+      const span = Math.max(8, gapX - 16);
+      const sx = leftSide
+        ? 6 + (speckle % Math.max(1, span))
+        : gapX + gapW + 6 + (speckle % Math.max(1, Math.max(8, cliffWidth - 16)));
+      speckle = (Math.imul(speckle ^ (speckle >>> 13), 3266489917) >>> 0);
+      const sy = gapY - 44 + (speckle % Math.max(1, Math.floor(bankHeight)));
+      graphics.fillCircle(sx, sy, 1.8);
+    }
   }
 
   private waterLineY(height: number, gapY: number): number {
@@ -500,14 +639,52 @@ export class BridgeSceneController {
       .fillStyle(stateColor, vm.exact ? 0.18 : 0.12)
       .fillRect(gapX, gapY - 24, gapW, 48)
       .lineStyle(vm.exact ? 4 : 3, stateColor, 0.95);
-    drawDashedLine(graphics, gapX, gapY - 24, gapX + gapW, gapY - 24, 10, 7);
-    drawDashedLine(graphics, gapX, gapY + 24, gapX + gapW, gapY + 24, 10, 7);
+    if (vm.exact) {
+      // Exact fit: solid double frame + check geometry (never color alone).
+      graphics
+        .strokeRect(gapX, gapY - 24, gapW, 48)
+        .lineStyle(2, stateColor, 0.9)
+        .strokeRect(gapX + 4, gapY - 20, Math.max(1, gapW - 8), 40);
+      const cx = gapX + gapW / 2;
+      graphics
+        .lineStyle(4, COLORS.ink, 0.95)
+        .lineBetween(cx - 12, gapY - 34, cx - 3, gapY - 25)
+        .lineBetween(cx - 3, gapY - 25, cx + 13, gapY - 44);
+    } else {
+      drawDashedLine(graphics, gapX, gapY - 24, gapX + gapW, gapY - 24, 10, 7);
+      drawDashedLine(graphics, gapX, gapY + 24, gapX + gapW, gapY + 24, 10, 7);
+      // Underfill open-span cue: dotted center line reads as "still open".
+      if (!vm.overfill) {
+        graphics.lineStyle(2, COLORS.ink, 0.4);
+        drawDashedLine(graphics, gapX + 6, gapY, gapX + gapW - 6, gapY, 4, 6);
+      }
+    }
     graphics
       .lineBetween(gapX, gapY - 24, gapX, gapY + 24)
       .lineBetween(gapX + gapW, gapY - 24, gapX + gapW, gapY + 24)
       .fillStyle(stateColor, 1)
       .fillCircle(gapX, gapY, 6)
       .fillCircle(gapX + gapW, gapY, 6);
+  }
+
+  /**
+   * Underfill geometry: hatch the still-open remainder of the span so the
+   * "how much is left" cue is pattern + extent, never color alone. Purely
+   * decorative: the authoritative remainder lives in viewModel.remainingSpan.
+   */
+  private drawUnderfillState(gapX: number, gapY: number, gapW: number, filledPx: number): void {
+    const graphics = this.effectLayer;
+    if (!graphics) return;
+    const openStart = gapX + clamp(filledPx, 0, gapW);
+    const openEnd = gapX + gapW;
+    if (openEnd - openStart < 8) return;
+    graphics.lineStyle(2, COLORS.ink, 0.5);
+    drawDashedLine(graphics, openStart, gapY - 18, openEnd, gapY - 18, 6, 4);
+    drawDashedLine(graphics, openStart, gapY + 18, openEnd, gapY + 18, 6, 4);
+    graphics.lineStyle(1, COLORS.ink, 0.3);
+    for (let hx = openStart + 4; hx < openEnd - 2; hx += 10) {
+      graphics.lineBetween(hx, gapY + 14, Math.min(openEnd, hx + 7), gapY - 14);
+    }
   }
 
   private drawOverfillState(gapX: number, gapY: number, gapW: number, vm: BridgeViewModel): void {
@@ -523,18 +700,77 @@ export class BridgeSceneController {
       .lineBetween(start, gapY + 30, start + excess, gapY + 30)
       .lineStyle(2, COLORS.overfill, 0.9)
       .lineBetween(start + excess, gapY - 30, start + excess, gapY + 30);
+    // Cross-hatch the excess segment + warning triangle at its tip.
+    graphics.lineStyle(1, COLORS.ink, 0.55);
+    for (let hx = start + 3; hx < start + excess - 1; hx += 8) {
+      graphics.lineBetween(hx, gapY - 28, Math.min(start + excess, hx + 6), gapY + 28);
+    }
+    const tipX = start + excess;
+    graphics
+      .lineStyle(3, COLORS.ink, 0.95)
+      .lineBetween(tipX + 4, gapY - 12, tipX + 4, gapY + 12)
+      .lineBetween(tipX + 4, gapY - 12, tipX + 14, gapY)
+      .lineBetween(tipX + 14, gapY, tipX + 4, gapY + 12)
+      .fillStyle(COLORS.ink, 0.95)
+      .fillCircle(tipX + 4, gapY, 1.6);
   }
 
+  /**
+   * GAME-302: soft overhang preview before commit. Same geometry language as
+   * the committed overfill (excess width past the gap) but dashed to read as
+   * "would stick out", never color alone (⚠ + text live in DOM + labels).
+   */
+  private drawOverhangPreview(gapX: number, gapY: number, gapW: number, excessPx: number): void {
+    const graphics = this.effectLayer;
+    if (!graphics) return;
+    const excess = Math.max(16, Math.min(160, excessPx));
+    const start = gapX + gapW;
+    graphics.lineStyle(3, COLORS.overfill, 0.85);
+    drawDashedLine(graphics, start, gapY - 30, start + excess, gapY - 30, 8, 5);
+    drawDashedLine(graphics, start, gapY + 30, start + excess, gapY + 30, 8, 5);
+    graphics
+      .lineStyle(2, COLORS.ink, 0.9)
+      .lineBetween(start + excess, gapY - 30, start + excess, gapY + 30)
+      // Warning triangle at the would-be tip (matches committed overfill).
+      .lineStyle(2, COLORS.ink, 0.9)
+      .lineBetween(start + excess + 4, gapY - 10, start + excess + 4, gapY + 10)
+      .lineBetween(start + excess + 4, gapY - 10, start + excess + 12, gapY)
+      .lineBetween(start + excess + 12, gapY, start + excess + 4, gapY + 10);
+  }
+
+  /**
+   * Crossing payoff flag + celebration rings. The flag carries an abstract
+   * diamond load-marker (original LevelBest geometry; GAME-171 AC13 allows an
+   * abstract marker instead of a character). Static when reduced-motion is on:
+   * same shapes, no tween. Audio payoff is DOM-owned (sound.ts) with a mute
+   * guard — Phaser runs with noAudio and never plays sound here.
+   */
   private drawSuccessMarker(scene: SceneLike, gapX: number, gapY: number, gapW: number, vm: BridgeViewModel): void {
     const markerStart = gapX + gapW / 2;
     const markerEnd = gapX + gapW + Math.max(18, Math.min(34, scene.scale.width * 0.05));
     const markerX = vm.crossing && !vm.reducedMotion ? markerStart : markerEnd;
     this.successMarker = scene.add.rectangle(markerX, gapY - 38, 22, 12, COLORS.exact, 1);
     this.successMarker.setData("role", "success-marker");
+    const poleX = markerX + 9;
     this.effectLayer
       ?.lineStyle(3, COLORS.exact, 1)
-      .lineBetween(markerX + 9, gapY - 31, markerX + 9, gapY - 53)
-      .lineBetween(markerX + 9, gapY - 53, markerX + 20, gapY - 48);
+      .lineBetween(poleX, gapY - 31, poleX, gapY - 53)
+      .lineBetween(poleX, gapY - 53, poleX + 11, gapY - 48)
+      // Abstract diamond load-marker at the pole tip (original geometry).
+      .lineStyle(2, COLORS.ink, 0.9)
+      .lineBetween(poleX - 4, gapY - 58, poleX, gapY - 62)
+      .lineBetween(poleX, gapY - 62, poleX + 4, gapY - 58)
+      .lineBetween(poleX + 4, gapY - 58, poleX, gapY - 54)
+      .lineBetween(poleX, gapY - 54, poleX - 4, gapY - 58)
+      // Celebration rings + radiating cheer ticks around the flag.
+      .lineStyle(2, COLORS.exact, 0.8)
+      .strokeCircle(poleX + 5, gapY - 48, 10)
+      .lineStyle(2, COLORS.target, 0.8)
+      .strokeCircle(poleX + 5, gapY - 48, 16)
+      .lineStyle(2, COLORS.ink, 0.6)
+      .lineBetween(poleX - 12, gapY - 62, poleX - 17, gapY - 67)
+      .lineBetween(poleX + 22, gapY - 62, poleX + 27, gapY - 67)
+      .lineBetween(poleX + 5, gapY - 70, poleX + 5, gapY - 76);
 
     if (vm.crossing && !vm.reducedMotion && scene.tweens?.add) {
       scene.tweens.add({
@@ -544,6 +780,28 @@ export class BridgeSceneController {
         ease: "Sine.easeInOut",
       });
     }
+  }
+
+  /**
+   * Splash rings where the car meets the water. Drawn statically in both
+   * motion modes (the falling tween carries motion when allowed); the
+   * reduced-motion equivalent is the same rings with the car parked at the
+   * water line, announced by the DOM live region.
+   */
+  private drawSplash(gapX: number, gapY: number, gapW: number, waterY: number): void {
+    const graphics = this.effectLayer;
+    if (!graphics) return;
+    const splashX = gapX + gapW * 0.68;
+    graphics
+      .lineStyle(3, COLORS.waterLight, 0.9)
+      .strokeCircle(splashX, waterY + 6, 12)
+      .lineStyle(2, COLORS.waterLight, 0.7)
+      .strokeCircle(splashX, waterY + 6, 20)
+      .lineStyle(2, COLORS.white, 0.8)
+      .strokeCircle(splashX, waterY + 6, 28)
+      .lineStyle(2, COLORS.ink, 0.5)
+      .lineBetween(splashX - 18, waterY - 10, splashX - 24, waterY - 18)
+      .lineBetween(splashX + 18, waterY - 10, splashX + 24, waterY - 18);
   }
 
   private drawCar(scene: SceneLike, gapX: number, gapY: number, gapW: number, vm: BridgeViewModel): void {
@@ -637,6 +895,7 @@ export class BridgeSceneController {
       fillStyle: () => this.fallbackGraphics(),
       fillRect: () => this.fallbackGraphics(),
       fillCircle: () => this.fallbackGraphics(),
+      strokeCircle: () => this.fallbackGraphics(),
       lineStyle: () => this.fallbackGraphics(),
       lineBetween: () => this.fallbackGraphics(),
       strokeRect: () => this.fallbackGraphics(),

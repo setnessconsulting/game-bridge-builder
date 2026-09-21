@@ -8,7 +8,9 @@ import {
   exactFitVerdict,
   remainingSpanUnits,
   availableTray,
+  maxShimAbs,
 } from "./exactness";
+import { previewPlacementFit } from "./engine";
 import type { BridgeIntentType } from "./intents";
 import { ROUND_CAP_BRIDGES, ROUND_CAP_SECONDS, type BridgeClockMode } from "./clock";
 import {
@@ -58,6 +60,14 @@ export interface BridgePieceView {
   focused: boolean;
   dragging: boolean;
   removable: boolean;
+  /**
+   * GAME-302: true when placing this tray piece now would overhang
+   * (engine-authoritative via previewPlacementFit). Presentation only —
+   * never drives correctness.
+   */
+  oversized: boolean;
+  /** Excess past the gap if placed now; null when it fits or is a shim. */
+  excessUnits: number | null;
 }
 
 export interface BridgeSlotView {
@@ -114,6 +124,18 @@ export interface BridgeViewModel {
   draggingPieceId: string | null;
   placementPreviewPieceId: string | null;
   removablePieceIds: string[];
+  /** GAME-302: tray ids that would overhang the remaining span right now. */
+  oversizedPieceIds: string[];
+  /**
+   * GAME-302: oversize detail for the current selection, if that selection
+   * would overhang. Null when nothing selected or selection fits.
+   */
+  selectedOversize: { excessUnits: number; remaining: number } | null;
+  /**
+   * GAME-302: oversize detail for the hover/focus preview target, if that
+   * target would overhang. Null when no preview or preview fits.
+   */
+  previewOversize: { pieceId: string; excessUnits: number; remaining: number } | null;
   underfill: boolean;
   overfill: boolean;
   exact: boolean;
@@ -193,6 +215,8 @@ function toPieceView(
     focused: boolean;
     dragging: boolean;
     removable: boolean;
+    oversized?: boolean;
+    excessUnits?: number | null;
   }
 ): BridgePieceView {
   return {
@@ -205,6 +229,8 @@ function toPieceView(
     focused: flags.focused,
     dragging: flags.dragging,
     removable: flags.removable,
+    oversized: flags.oversized ?? false,
+    excessUnits: flags.excessUnits ?? null,
   };
 }
 
@@ -234,22 +260,55 @@ export function deriveBridgeViewModel(
   const focusedPieceId = options.focusedPieceId ?? state.selectedPieceId;
   const placementPreviewPieceId = options.placementPreviewPieceId ?? null;
 
-  const pieceTray = tray.map((piece) =>
-    toPieceView(piece, layout, {
+  // GAME-302: engine-authoritative oversize flags. Same shim allowance as
+  // session.placePiece so tray dimming matches the reject rule exactly.
+  const shimAllowance = maxShimAbs(tray);
+  const canOversizeTeach = state.phase === "building" && remaining > 0;
+  function oversizeFor(units: number): { oversized: boolean; excessUnits: number | null } {
+    if (!canOversizeTeach) return { oversized: false, excessUnits: null };
+    const preview = previewPlacementFit(state.puzzle, filled, units, {
+      allowOvershootUpTo: shimAllowance,
+    });
+    if (!preview.wouldOverhang) return { oversized: false, excessUnits: null };
+    return { oversized: true, excessUnits: preview.excess };
+  }
+
+  const pieceTray = tray.map((piece) => {
+    const { oversized, excessUnits } = oversizeFor(piece.units);
+    return toPieceView(piece, layout, {
       selected: piece.id === state.selectedPieceId,
       focused: piece.id === focusedPieceId,
       dragging: piece.id === draggingPieceId,
       removable: false,
-    })
-  );
+      oversized,
+      excessUnits,
+    });
+  });
   const placed = state.placed.map((piece) =>
     toPieceView(piece, layout, {
       selected: false,
       focused: piece.id === focusedPieceId,
       dragging: false,
       removable: state.phase === "building",
+      oversized: false,
+      excessUnits: null,
     })
   );
+
+  const oversizedPieceIds = pieceTray.filter((p) => p.oversized).map((p) => p.id);
+  function oversizeDetailFor(pieceId: string | null): { excessUnits: number; remaining: number } | null {
+    if (!pieceId || !canOversizeTeach) return null;
+    const match = pieceTray.find((p) => p.id === pieceId);
+    if (!match?.oversized || match.excessUnits == null) return null;
+    return { excessUnits: match.excessUnits, remaining };
+  }
+  const selectedOversize = oversizeDetailFor(state.selectedPieceId);
+  const previewOversize = placementPreviewPieceId
+    ? (() => {
+        const detail = oversizeDetailFor(placementPreviewPieceId);
+        return detail ? { pieceId: placementPreviewPieceId, ...detail } : null;
+      })()
+    : null;
 
   const exact = state.phase === "exact" || verdict === "exact";
   const underfill = remaining > 0 && !exact;
@@ -343,6 +402,9 @@ export function deriveBridgeViewModel(
     draggingPieceId,
     placementPreviewPieceId,
     removablePieceIds: placed.filter((p) => p.removable).map((p) => p.id),
+    oversizedPieceIds,
+    selectedOversize,
+    previewOversize,
     underfill,
     overfill,
     exact,

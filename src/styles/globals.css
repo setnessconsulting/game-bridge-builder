@@ -1420,8 +1420,12 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
 }
 
 /* Canvas is a duplicate of the DOM mirror (the semantic source), so on short
-   viewports it yields height first. Width still drives the Phaser resize. */
+   viewports it yields height first. Width still drives the Phaser resize, so
+   the host keeps its definite full width and only the height is capped —
+   otherwise aspect-ratio would shrink the width to preserve 16/9 and the
+   canvas-width-driven responsive bucket would misreport phone on desktop. */
 .bb-candidate-canvas {
+  width: 100%;
   min-height: 140px;
   max-height: 26vh;
   max-height: 26dvh;
@@ -1475,7 +1479,7 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
   .bb-candidate-header h2 { font-size: 20px; }
   /* Width-driven 16/9 would cost ~190px here; the mirror below is the
      operable surface, so cap the duplicate canvas raster. */
-  .bb-candidate-canvas { min-height: 120px; max-height: 160px; }
+  .bb-candidate-canvas { width: 100%; min-height: 120px; max-height: 160px; }
   .bb-candidate-status { font-size: 12px; gap: 6px; }
 }
 
@@ -1495,7 +1499,7 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
   .bb-candidate-header h2 { font-size: 18px; margin-bottom: 2px; }
   .bb-candidate-lede { font-size: 12px; }
   .bb-candidate-status { min-height: 44px; padding: 4px 8px; font-size: 12px; gap: 6px; }
-  .bb-candidate-canvas { min-height: 100px; max-height: 18vh; max-height: 18dvh; }
+  .bb-candidate-canvas { width: 100%; min-height: 100px; max-height: 18vh; max-height: 18dvh; }
   .bb-candidate-board { gap: 8px; }
   .bb-candidate-mirror { gap: 6px; padding: 10px; }
   .bb-mirror-heading { gap: 8px; }
@@ -1507,4 +1511,141 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
   .bb-candidate-actions { gap: 8px; }
   .bb-candidate-footer { padding-top: 8px; }
   .bb-candidate-feedback { padding: 8px 10px; font-size: 13px; }
+}
+
+/* ---------------------------------------------------------------------------
+   GAME-297: player-ready span vocabulary shared with the Phaser scene.
+   Same non-color language in both surfaces: ◌ open (dashed) · ✓ exact
+   (double border + check) · ⚠ over (hatch + warning triangle). Decorative
+   only — semantics live in data-state + the live-region text.
+--------------------------------------------------------------------------- */
+.bb-span-state-glyph {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 253, 247, .92);
+  border: 2px solid var(--bb-wood-dark);
+  color: var(--bb-ink);
+  font-size: 16px;
+  font-weight: 900;
+  pointer-events: none;
+}
+.bb-candidate-bridge[data-state="exact"] .bb-span-state-glyph {
+  border-color: var(--bb-exact);
+  color: #1f694d;
+}
+.bb-candidate-bridge[data-state="overfill"] .bb-span-state-glyph {
+  border-style: dashed;
+  border-color: #7b382f;
+  color: #7b382f;
+}
+/* Underfill open slot: light hatch so "still open" is pattern, not color. */
+.bb-candidate-bridge[data-state="underfill"] .bb-candidate-open-slot:not(:disabled) {
+  background:
+    repeating-linear-gradient(135deg, rgba(208,163,58,.16) 0 8px, rgba(255,253,247,.86) 8px 16px);
+}
+/* Length-proportional placed planks: flex row honors inline widths. */
+.bb-candidate-placed { flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* Tray proportional bar: cells stay equal for touch targets; the wood bar
+   inside carries the length cue and matches Phaser tray ratios. */
+.bb-candidate-piece { flex-direction: column; gap: 4px; }
+.bb-piece-bar {
+  display: block;
+  height: 8px;
+  min-width: 18%;
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--bb-wood-light), var(--bb-wood));
+  border: 1px solid var(--bb-wood-dark);
+  pointer-events: none;
+}
+/* Dragging lift shared with Phaser (lifted shadow + thicker outline). */
+.bb-candidate-piece.is-dragging {
+  transform: translateY(-4px);
+  box-shadow: inset 0 -5px 0 rgba(106,58,33,.13), 0 10px 18px rgba(16,42,67,.28);
+  border-color: var(--bb-wood-dark);
+  border-width: 3px;
+  cursor: grabbing;
+  opacity: .92;
+}
+/* Locked tray (expired round / completed bridge): dim + hatch, not color. */
+.bb-candidate-piece.is-disabled {
+  opacity: .6;
+  border-style: dashed;
+  background:
+    repeating-linear-gradient(135deg, rgba(16,42,67,.12) 0 8px, rgba(255,243,217,.9) 8px 16px),
+    linear-gradient(180deg, #fff3d9, #e6b56e);
+}
+/* Crossing payoff: flag + expanding rings near the vehicle. Static shapes in
+   both motion modes; the animation is killed by .bb-reduce-motion and by the
+   prefers-reduced-motion block below. Audio payoff is the sound cue (mute
+   guard in TSX) — there is no visual-only audio dependency. */
+.bb-celebration {
+  position: absolute;
+  right: 6%;
+  bottom: 52%;
+  z-index: 4;
+  width: 54px;
+  height: 54px;
+  pointer-events: none;
+}
+.bb-celebration-flag {
+  position: absolute;
+  inset: 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e5f6ed;
+  border: 3px solid var(--bb-exact);
+  color: #1f694d;
+  font-size: 20px;
+  font-weight: 900;
+  animation: bb-celebrate-pop 600ms ease-out 1;
+}
+.bb-celebration-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid var(--bb-exact);
+  opacity: .7;
+  animation: bb-celebrate-ring 1000ms ease-out infinite;
+}
+.bb-celebration-ring-2 { animation-delay: 350ms; border-color: var(--bb-target); }
+@keyframes bb-celebrate-pop { 0% { transform: scale(.4); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes bb-celebrate-ring { from { transform: scale(.55); opacity: .8; } to { transform: scale(1.15); opacity: 0; } }
+/* Splash payoff where the car meets the water. Same static/motion rule. */
+.bb-splash {
+  position: absolute;
+  left: 52%;
+  bottom: 2%;
+  z-index: 4;
+  width: 76px;
+  height: 30px;
+  pointer-events: none;
+}
+.bb-splash-ring {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, .9);
+  animation: bb-splash-ring 900ms ease-out infinite;
+}
+.bb-splash-ring-1 { width: 26px; height: 12px; margin-left: -13px; }
+.bb-splash-ring-2 { width: 48px; height: 20px; margin-left: -24px; animation-delay: 220ms; }
+.bb-splash-ring-3 { width: 70px; height: 28px; margin-left: -35px; animation-delay: 440ms; }
+@keyframes bb-splash-ring { from { transform: scale(.6); opacity: .9; } to { transform: scale(1.1); opacity: 0; } }
+.bb-reduce-motion .bb-celebration-flag,
+.bb-reduce-motion .bb-celebration-ring,
+.bb-reduce-motion .bb-splash-ring { animation: none !important; }
+.bb-reduce-motion .bb-celebration-ring { opacity: .7; }
+.bb-reduce-motion .bb-splash-ring { opacity: .8; }
+@media (prefers-reduced-motion: reduce) {
+  .bb-celebration-flag, .bb-celebration-ring, .bb-splash-ring { animation: none !important; }
+  .bb-candidate-piece.is-dragging { transform: none; }
 }
