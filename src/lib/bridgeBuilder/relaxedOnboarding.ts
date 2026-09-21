@@ -9,6 +9,9 @@
  * First session leads with the untimed path so a new player is never forced
  * into 90 s of clock pressure before they have learned the loop. The timed
  * challenge stays one tap away and is never removed or reframed as guilt.
+ *
+ * Storage is **session-scoped** (Q-15 / PRD §7): the choice is remembered for
+ * the tab session only, and a blocked storage API is a silent no-op.
  */
 
 export type RelaxedSurface = "free" | "break";
@@ -33,7 +36,10 @@ export interface StorageLike {
 
 function defaultStorage(): StorageLike | null {
   try {
-    return typeof window !== "undefined" && window.localStorage ? window.localStorage : null;
+    // Q-15 / PRD §7: storage is session-scoped only. Cross-visit persistence is
+    // a v1 non-goal (it waits for family accounts), so this must never be
+    // localStorage. A blocked/throwing API degrades to a no-op.
+    return typeof window !== "undefined" && window.sessionStorage ? window.sessionStorage : null;
   } catch {
     // Storage can throw (private mode, hardened contexts). Onboarding still
     // works in-session; it just cannot be remembered.
@@ -44,17 +50,25 @@ function defaultStorage(): StorageLike | null {
 export interface RelaxedOnboarding {
   /** True when no earlier visit has been recorded on this device. */
   firstSession: boolean;
-  /** Explicit remembered choice, or null when the player has not chosen yet. */
+  /**
+   * Explicit choice remembered for this tab session, or null when the player
+   * has not chosen yet. Session-scoped by policy (Q-15); never cross-visit.
+   */
   rememberedRelaxed: boolean | null;
 }
 
 export function resolveRelaxedOnboarding(
   storage: StorageLike | null = defaultStorage(),
 ): RelaxedOnboarding {
-  const visited = storage?.getItem(VISITED_KEY) === "1";
-  const raw = storage?.getItem(RELAXED_PREF_KEY);
-  const rememberedRelaxed = raw === "true" ? true : raw === "false" ? false : null;
-  return { firstSession: !visited, rememberedRelaxed };
+  try {
+    const visited = storage?.getItem(VISITED_KEY) === "1";
+    const raw = storage?.getItem(RELAXED_PREF_KEY);
+    const rememberedRelaxed = raw === "true" ? true : raw === "false" ? false : null;
+    return { firstSession: !visited, rememberedRelaxed };
+  } catch {
+    // Blocked storage degrades to a first-session no-op (Q-15).
+    return { firstSession: true, rememberedRelaxed: null };
+  }
 }
 
 /** Record the player's explicit Relaxed choice and mark this device visited. */

@@ -64,6 +64,21 @@ describe("GAME-305 first-session untimed-first onboarding", () => {
     expect(() => persistRelaxedChoice(null, true)).not.toThrow();
   });
 
+  it("is a graceful no-op when the storage API is blocked (Q-15)", () => {
+    const blocked: StorageLike = {
+      getItem() {
+        throw new Error("storage blocked");
+      },
+      setItem() {
+        throw new Error("storage blocked");
+      },
+    };
+    // Reads that throw must not crash the first-session resolution.
+    expect(() => resolveRelaxedOnboarding(blocked)).not.toThrow();
+    // Writes that throw must degrade to a no-op, never surface to the player.
+    expect(() => persistRelaxedChoice(blocked, true)).not.toThrow();
+  });
+
   it("keeps the timed challenge available on the first session", () => {
     // Untimed-first lead + an explicit, guilt-free timed line.
     expect(firstSessionLeadCopy().toLowerCase()).toContain("no timer");
