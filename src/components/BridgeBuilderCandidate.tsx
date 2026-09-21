@@ -8,7 +8,7 @@ import {
   formatClockMs,
   type BridgeClockState,
 } from "@/lib/bridgeBuilder/clock";
-import { CANDIDATE_PUZZLE } from "@/lib/bridgeBuilder/candidatePuzzle";
+import { CANDIDATE_PUZZLE, TEACHING_PUZZLE } from "@/lib/bridgeBuilder/candidatePuzzle";
 import {
   createBridgeIntent,
   validateBridgeIntent,
@@ -47,6 +47,14 @@ import {
   timeoutHeadline,
   untimedRetryCtaLabel,
 } from "@/lib/bridgeBuilder/timeoutCoaching";
+import {
+  firstSessionLeadCopy,
+  firstSessionTimedCopy,
+  isRelaxedAvailableForSurface,
+  persistRelaxedChoice,
+  resolveRelaxedOnboarding,
+  type RelaxedSurface,
+} from "@/lib/bridgeBuilder/relaxedOnboarding";
 import { compositionUnits as coachingCompositionUnits } from "@/lib/bridgeBuilder/exactness";
 import { closeBridgeSoundContext, playBridgeCue } from "@/lib/bridgeBuilder/sound";
 import type { BridgePuzzle, Piece } from "@/lib/bridgeBuilder/types";
@@ -181,7 +189,7 @@ function PieceFace({
   return <span aria-hidden="true">{label}</span>;
 }
 
-export default function BridgeBuilderCandidate() {
+export default function BridgeBuilderCandidate({ surface = "free" }: { surface?: RelaxedSurface } = {}) {
   const roundSeedRef = useRef(20_260_919);
   const [roundPuzzles, setRoundPuzzles] = useState(() =>
     createQualificationRound(20_260_918, { firstPuzzle: CANDIDATE_PUZZLE }),
@@ -206,7 +214,13 @@ export default function BridgeBuilderCandidate() {
   // GAME-304 / GAME-305: Relaxed (untimed) round shape in the production
   // candidate. Free site only; never extends an expired clock — the untimed
   // retry always starts a NEW session (new sessionId + generation).
-  const [relaxed, setRelaxed] = useState(false);
+  const [onboarding] = useState(() => resolveRelaxedOnboarding());
+  // GAME-305: a first-time player is led to the untimed path (learn default),
+  // and their explicit Relaxed choice is remembered for later visits.
+  const [firstSession, setFirstSession] = useState(onboarding.firstSession);
+  const [relaxed, setRelaxed] = useState(onboarding.rememberedRelaxed ?? false);
+  // GAME-305 containment: Relaxed never renders inside an earned-break host.
+  const relaxedAvailable = isRelaxedAvailableForSurface(surface);
   const [reducedMotion, setReducedMotion] = useState(() =>
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true,
   );
@@ -469,6 +483,17 @@ export default function BridgeBuilderCandidate() {
     }
   }, [expired, roundComplete, hasStarted, reducedMotion]);
 
+  // GAME-305: the first-session setup is taller than the returning setup, so
+  // the browser can leave a residual scroll offset after Start. The primary
+  // loop must begin at the top (GAME-303), so reset it deterministically when
+  // a round begins.
+  useEffect(() => {
+    if (!hasStarted) return;
+    if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [hasStarted]);
+
   function clearIntentIssue() {
     if (retryNoticeTimerRef.current !== null) {
       window.clearTimeout(retryNoticeTimerRef.current);
@@ -723,6 +748,8 @@ export default function BridgeBuilderCandidate() {
   }
 
   function beginRound() {
+    persistRelaxedChoice(undefined, relaxed);
+    setFirstSession(false);
     setClock(createBridgeClock({ nowMs: performance.now() }));
     setPaused(false);
     setHasStarted(true);
@@ -738,9 +765,16 @@ export default function BridgeBuilderCandidate() {
    * it never resumes or extends the expired clock.
    */
   function startRound(options: { untimed: boolean }) {
+    // GAME-305: the first-session untimed start opens with the nearly
+    // unfailable teaching round (UX §2 J1); every other start keeps the
+    // deterministic qualification slice.
+    const firstPuzzleOverride = firstSession && options.untimed ? TEACHING_PUZZLE : undefined;
     const nextPuzzles = createQualificationRound(roundSeedRef.current++, {
+      firstPuzzle: firstPuzzleOverride,
       previousPuzzle: session.puzzle,
     });
+    persistRelaxedChoice(undefined, options.untimed);
+    setFirstSession(false);
     const firstPuzzle = nextPuzzles[0] ?? CANDIDATE_PUZZLE;
     const nextContext = {
       sessionId: newSessionId(),
@@ -769,6 +803,19 @@ export default function BridgeBuilderCandidate() {
     setDraggingPieceId(null);
     setDeniedPulse(0);
     setAnnouncement(questionText(firstPuzzle, 1));
+  }
+
+  /** GAME-305: remember an explicit toggle and leave the first-session framing. */
+  function chooseRelaxed(value: boolean) {
+    persistRelaxedChoice(undefined, value);
+    setRelaxed(value);
+    setFirstSession(false);
+  }
+
+  /** First-session untimed-first primary CTA (learn default, no clock pressure). */
+  function startRelaxedFirstSession() {
+    setRelaxed(true);
+    startRound({ untimed: true });
   }
 
   function startUntimedRetry() {
@@ -816,22 +863,30 @@ export default function BridgeBuilderCandidate() {
         <section className="bb-candidate-setup" data-testid="bridge-setup" aria-labelledby="bridge-setup-title">
           <p className="eyebrow">Before you start</p>
           <h2 id="bridge-setup-title">Ready to build a bridge?</h2>
-          <p>Each solved bridge brings a fresh target and plank set. Build up to 6 bridges in 90 seconds — or practice with no timer.</p>
-          {/* GAME-305 minimal surfacing in the candidate: Relaxed is the
-              discoverable untimed first-session path. Free site only. */}
-          <button
-            type="button"
-            data-testid="setup-relaxed"
-            aria-pressed={relaxed}
-            onClick={() => setRelaxed((value) => !value)}
-          >
-            {relaxed ? "Relaxed build on — no timer" : "Relaxed build — no timer"}
-          </button>
-          <p className="muted-label">
-            {relaxed
-              ? "Relaxed is on: no clock, up to 6 bridges."
-              : "Relaxed is off: 90 seconds or 6 bridges."}
+          <p data-testid="setup-lead">
+            {firstSession
+              ? firstSessionLeadCopy()
+              : "Each solved bridge brings a fresh target and plank set. Build up to 6 bridges in 90 seconds — or practice with no timer."}
           </p>
+          {/* GAME-305: Relaxed is the discoverable untimed path (free site
+              only — hidden inside the earned break, §1.1 containment). */}
+          {relaxedAvailable ? (
+            <>
+              <button
+                type="button"
+                data-testid="setup-relaxed"
+                aria-pressed={relaxed}
+                onClick={() => chooseRelaxed(!relaxed)}
+              >
+                {relaxed ? "Relaxed build on — no timer" : "Relaxed build — no timer"}
+              </button>
+              <p className="muted-label">
+                {relaxed
+                  ? "Relaxed is on: no clock, up to 6 bridges."
+                  : "Relaxed is off: 90 seconds or 6 bridges."}
+              </p>
+            </>
+          ) : null}
           <fieldset className="bb-face-choice">
             <legend>How should plank values appear?</legend>
             <button
@@ -852,7 +907,29 @@ export default function BridgeBuilderCandidate() {
             </button>
           </fieldset>
           <p className="muted-label">Numbers are the default. Dots show each plank value visually.</p>
-          <button type="button" className="button primary" data-testid="bridge-start" onClick={beginRound}>
+          {firstSession && relaxedAvailable ? (
+            <>
+              {/* Untimed-first primary: a new player meets the loop without
+                  clock pressure. The timed challenge stays one tap away. */}
+              <button
+                type="button"
+                className="button primary"
+                data-testid="bridge-start-relaxed"
+                onClick={startRelaxedFirstSession}
+              >
+                Start with no timer
+              </button>
+              <p className="muted-label" data-testid="setup-timed-hint">
+                {firstSessionTimedCopy()}
+              </p>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className={firstSession && relaxedAvailable ? "button" : "button primary"}
+            data-testid="bridge-start"
+            onClick={beginRound}
+          >
             Start building
           </button>
         </section>
