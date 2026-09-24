@@ -14,7 +14,7 @@ Authority: `v2/DECISIONS.md`. Load-bearing changes only (findings → where appl
 
 | # | Change | Finding IDs | Applied in |
 |---|---|---|---|
-| 1 | Accessibility standard is **WCAG 2.2 AA**, asserted **per success criterion**; **SC 2.2.1** and **SC 2.2.2** recorded **not met** with a documented essential-limit exception; **Relaxed build** named as the untimed conforming path; conformance statement **signed** by the owner-named signer | CRIT-4, CRIT-12, O-2, O-7 | §7, §7.1, §1, §11, §12 |
+| 1 | Accessibility target is **WCAG 2.2 AA**, assessed **per success criterion**; exceptions require normative evidence and an unmet applicable Level A/AA criterion prevents an AA claim; **Relaxed build** is the untimed accessibility path pending alternate-version verification; conformance statement **signed** by the owner-named signer | CRIT-4, CRIT-12, O-2, O-7 | §7, §7.1, §1, §11, §12 |
 | 2 | **Return contract fixed:** the earned break is **wall-clock and non-extendable**; tab-blur does **not** create unbounded play (free site carries a **cumulative 60 s pause budget**, then the round ends honestly at resume); the **3 s auto-return is non-cancellable and non-deferrable**; "cancellable by one tap" **deleted**; no copy, control or state may offer more time | CRIT-6, CRIT-7, MIN-2, MIN-5 | §1, §2 (J2, cross-context), §3, §4, §9, §10 |
 | 3 | **`submit` / `incorrectSubmit` made first-class:** a visible **Check it** control on S1, in the keyboard map and tab order, in the verdict vocabulary table, with `submit_result{result,diff}` telemetry and 0 penalties | CRIT-10, MIN-15 | §3, §4, §5, §5.4 |
 | 4 | **Combine / split / decompose verbs removed** from the interaction model — they change the legal-move set and the frozen union; deferred to a **separate future approved contract revision** | CRIT-2 | §1, §5, §12 (DQ-5 closed), Coverage check |
@@ -33,7 +33,7 @@ Authority: `v2/DECISIONS.md`. Load-bearing changes only (findings → where appl
 | 17 | Free-site storage posture and blocked-storage degradation stated (no UI difference implies a stated no-op) | REVIEW §6.15, MAJ-14 | §1, §3 |
 | 18 | Composed-span pan/zoom rule + hit-area nearest-centre rule referenced from the UX side | MAJ-18, W-13 | §3, §4, §7 |
 
-**Deferred / not applied in this document (with reason).** Band-specific session caps (O-3) — a lock supersession, not a UX edit; CI enforcement timing (O-4) — runtime, GAME-135 DoD; the additive contract fields this doc depends on (O-8, BB-CONTRACT-1) — prose here, contract there; locale/number formatting (W-15) — en-US lock; licensed/bespoke audio (MAJ-12 deferred branch). Each is listed with its owner in §12.
+**Deferred / not applied in this document (with reason).** Band-specific session caps (O-3) — a lock supersession, not a UX edit; CI enforcement timing (O-4) — runtime, GAME-135 DoD; the additive contract fields this doc depends on (O-8 approved, BB-CONTRACT-1 sanctioned) — prose here, contract there; locale/number formatting (W-15) — en-US lock; licensed/bespoke audio (MAJ-12 deferred branch). Each is listed with its owner in §12.
 
 ---
 
@@ -66,7 +66,7 @@ From `REQUIREMENTS.md` §A.2/§A.8; no new personas.
 
 ### 1.2 Entry contexts **[UPDATED]**
 
-1. **Free-site** — `/games` hub card → game route. Bounded **90 s or 6 bridges, whichever first**. Nothing saved. **Relaxed build** is surfaced on the hub card's secondary line and on S0, so the untimed conforming path (§7.1) is discoverable without adult coaching.
+1. **Free-site** — `/games` hub card → game route. Bounded **90 s or 6 bridges, whichever first**. Nothing saved. **Relaxed build** is surfaced on the hub card's secondary line and on S0, so the untimed accessibility path (§7.1) is discoverable without adult coaching; alternate-version conformance remains unverified.
 2. **Earned-break (Tier 1)** — unlock card after a lesson block → **fixed 90 s wall-clock window with a visible countdown back to practice**. **Not extendible**; no continuation, pause-forever or "more time" affordance may exist in the DOM, in a flag or in a parameter.
 3. **Relaxed** — toggle: no clock, bridges-built progress, stuck threshold 40 s / 6. **Free site only.**
 4. **Free-build shelf** — **explicit non-goal**; retired names Workshop/Sandbox (§2 J4). *"An unbounded, unscored surface reachable from the earned-break host would breach the locked bounded-session constraint"* — this is why the mode is a non-goal, not a candidate (CRIT-1).
@@ -76,8 +76,8 @@ From `REQUIREMENTS.md` §A.2/§A.8; no new personas.
 ## 2. Core user journeys (screen/state flow) **[UPDATED]**
 
 ### J1 — Free-site happy path
-1. **Hub (`/games`)** — card: "Drag planks into the gap so the bridge fits exactly. Build it your way." Tag `Building · Grades 1–8`. Primary *Play now*. Secondary line names the untimed path (§7.1 conforming path). No interstitial, age gate or signup.
-2. **S0 Setup** — four band cards with plain-language detail ("Fraction and decimal planks"), grades secondary; auto-band chip from assessment; session sentence *"90 seconds or 6 bridges — whichever comes first."* Controls: **Start** · *All games* · sound · **Relaxed build**.
+1. **Hub (`/games`)** — card: "Drag planks into the gap so the bridge fits exactly. Build it your way." Tag `Building · Grades 1–8`. Primary *Play now*. Secondary line names the untimed accessibility path (§7.1), pending alternate-version verification. No interstitial, age gate or signup.
+2. **S0 Setup** — four band cards with plain-language detail ("Fraction and decimal planks"), grades secondary; auto-band chip from assessment; session sentence *"90 seconds or 6 bridges — whichever comes first."* Controls: **Start** · *All games* · sound · **Relaxed build** (untimed accessibility path pending alternate-version verification).
 3. **S1 Play, puzzle 1 (teaching round)** — no tutorial text; gap 5 with tray [2][3] plus oversized decoy [8] teaches by being nearly unfailable.
 4. **Placement loop** — select → preview → commit → the structure visibly changes within 100 ms. Underfill leaves the gap open; overhang extends past the far cliff by exactly its excess, wobbles once, shows the diff chip, returns. Tray focus/selection renders the **same ghost preview** with the projected remaining span (MIN-16) — the preview is not a pointer-only state.
 5. **Exact fit** — cliffs connect; `exact` → `success` → `crossing` (post-verdict FX only, subject = the abstract non-character **load marker**, §11); "+10" floats near the bridge, never centre-screen.
@@ -274,8 +274,8 @@ Inside `play`: **structure first** (the bridge is the primary content) → numer
 | 1.4.3 / 1.4.11 | Contrast (Minimum) / Non-text Contrast | met | Contrast pairs recorded in Figma accessibility annotations (§11.6) |
 | 2.1.1 / 2.1.2 | Keyboard / No Keyboard Trap | met | A full round is completable keyboard-only, including `submit`, remove and preview (§5.4); no traps; deterministic focus restoration |
 | 2.1.4 | Character Key Shortcuts | met | Shortcuts are single-key (`U`, `R`, Esc) and remappable via AT conventions; no shortcut fires while focus is in a text field (none exists) |
-| **2.2.1** | **Timing Adjustable** | **NOT MET — documented exception** | The earned-break window is **fixed by the host return contract** (locked product law) and the free round's cap is the product's honest session shape; both are locked constraints that may not be removed. **Essential-limit exception** claimed and recorded. The Round deadline is **visible** (§2 J2.5) and only the free-site pause budget is adjustable by the player (60 s). **Relaxed build is the untimed conforming path** |
-| **2.2.2** | **Pause, Stop, Hide** | **NOT MET — documented exception** | The break countdown may not be paused, stopped or hidden: pausing it would defeat the return contract it exists to enforce. Same **essential-limit exception**, recorded against the same locked constraint. (Free-site blur-pause **is** provided, bounded at 60 s) |
+| **2.2.1** | **Timing Adjustable** | **Evaluate against the normative criterion; no blanket claim** | The earned-break window and free-round cap are locked product constraints. If a WCAG exception is claimed, GAME-134 records the normative rationale and evidence; if the applicable criterion is not met, the product does not claim WCAG 2.2 AA conformance. **Relaxed build is the untimed accessibility path pending alternate-version verification** |
+| **2.2.2** | **Pause, Stop, Hide** | **Evaluate against the normative criterion; no blanket claim** | The break countdown is wall-clock because it enforces the return contract; free-site blur pause is bounded at 60 s. Any exception must be substantiated in the per-SC table; if the applicable criterion is not met, the product does not claim WCAG 2.2 AA conformance. |
 | 2.4.3 / 2.4.7 | Focus Order / Focus Visible | met | Order tray → slots → Undo → Reset → Check it → hints → Exit; 3 px ring; focus moves to the heading on phase change and returns to the invoking control when an overlay closes |
 | 2.4.11 | Focus Not Obscured (Minimum) *(2.2)* | met | No sticky HUD element may overlap the focused control; overlays are non-modal or move focus into themselves |
 | 2.4.13 | Focus Appearance *(2.2)* | met | 3 px focus ring with ≥3:1 contrast against both the ring's inner and outer surroundings |
@@ -285,7 +285,7 @@ Inside `play`: **structure first** (the bridge is the primary content) → numer
 
 Rows that are **not applicable** to this surface (e.g. media alternatives, time-based media, dragging-only movements) are recorded as N/A in the GAME-134 table with the reason.
 
-**Conforming path (named).** **Relaxed build** — the untimed mode on the free site — is the disclosed conforming alternative for a player who cannot use a timed surface. It is surfaced on the S0 setup screen **and** in the hub card's secondary line so it is discoverable **without adult coaching**; the timed surface is not replaced by it.
+**Untimed accessibility path (named).** **Relaxed build** — the untimed mode on the free site — is disclosed for a player who cannot use a timed surface. It is surfaced on the S0 setup screen **and** in the hub card's secondary line so it is discoverable **without adult coaching**; the timed surface is not replaced by it, and it is not called a conforming alternate version until the full alternate-version requirements are independently verified.
 
 **Signer (named vehicle).** The per-SC conformance statement is **signed by the owner-named accessibility signer** under owner decision **O-7**, and is recorded as a DoD condition in **GAME-105** and an AC artefact of **GAME-134**; under O-7(b) the epic cannot close. The **role** is fixed here (accessibility signer, accountable for the conformance table). The **individual** and the date are an owner decision and are **not invented in this document** (BRIEF §2.3). The same O-7 decision names the **manual VoiceOver/NVDA executor and date**, without which Gate D is formally recorded as blocked.
 
@@ -395,11 +395,11 @@ UX-authored questions are DQ-*; the spec-level owner decisions the decisions log
 | **DQ-4** | **Pre-symbolic dot-face tier** (G-11) default? | Owner-named **curriculum owner** + design, before GAME-171 piece-family sign-off | **Open.** Policy-controlled; set the g12 default with curriculum input, else `Q-13` is scored without the tier (§4 deferral) | Major for piece-family sign-off |
 | **DQ-5** | **Decompose / combine verbs** (G-04, G-12) | Architect + product owner | **CLOSED as decided:** out of v1; out of contract; a separate future approved contract revision if ever added (CRIT-2). Not an open question | Closed |
 | **DQ-6** | **Does audio need its own bounded story?** | Product owner | **CLOSED as decided: no.** Original synthesized WebAudio is the frozen final state; cue inventory in the epic text; runtime cues GAME-133, mix/mute GAME-171, audio-described parity GAME-134; **no residual "unless scoring is commissioned" conditional** (MAJ-12) | Closed |
-| **O-2** | **Accessibility standard & exception set** | Product owner (with signer per O-7) | Adopt **(a)**: WCAG **2.2 AA** asserted per SC, SC 2.2.1 / 2.2.2 **not met** under the essential-limit exception, **Relaxed build** disclosed as the untimed conforming path (§7.1). **Needed before GAME-134 closes** | Blocks GAME-134 closure |
+| **O-2** | **Accessibility standard & exception set** | Product owner (with signer per O-7) | **Approved 2026-09-17:** target WCAG **2.2 AA** and assess per SC; substantiate exceptions; no blanket claim; **Relaxed build** is an untimed accessibility path pending alternate-version verification. **Needed before GAME-134 closes** | Blocks GAME-134 closure |
 | **O-3** | **Session-cap variance** (one cap vs band-specific) | Product owner | **(a)** single engine constant 90 s / 6 bridges. **(b) would invalidate the "90 seconds or 6 bridges" copy and the break window** and requires a written lock supersession — this is why the copy may not be changed unilaterally | Blocks if (b) chosen |
-| **O-4** | **CI enforcement timing vs Gate F** | Product owner + GAME-135 | (**a**) exactness/a11y/import-boundary suites enforce before Gate F; real-render lane may land after under a dated waiver. Owned by GAME-135 DoD (§0 item 2 deferral) | Blocks Gate F |
+| **O-4** | **CI enforcement timing vs Gate F** | Product owner + GAME-135 | **Approved 2026-09-17:** core suites and the real Phaser Chromium SwiftShader lane are green in CI before Gate F; a waiver may continue engineering but cannot close Gate F or authorize promotion. Owned by GAME-135 DoD | Blocks Gate F |
 | **O-7** | **Human-gate owner/date + the accessibility signer** | Product owner | **(a)** name one accountable reviewer per gate with dates, **including the AA conformance signer and the manual VoiceOver/NVDA executor**. Under (b) Gates D/E stay blocked and GAME-105 cannot reach Done — the §7.1 signer is unnameable without it | Blocks closure |
-| **O-8** | **Sanction of BB-CONTRACT-1 / BB-CONTENT-1** | Product owner | **(a)** sanction both. This document depends on **BB-CONTRACT-1** for the session deadline, `renderSeed` and ordered unit-based slots; declining leaves them as recorded contract gaps and weakens the §5/exactness evidence | No (weakens evidence if declined) |
+| **O-8** | **Sanction of BB-CONTRACT-1 / BB-CONTENT-1** | Product owner | **Approved 2026-09-17:** both bounded follow-ups are sanctioned and tracked as GAME-294 / GAME-295. Implementation and acceptance remain open | No (sanction is not implementation) |
 
 ---
 
@@ -455,7 +455,7 @@ UX-authored questions are DQ-*; the spec-level owner decisions the decisions log
 |---|---|---|
 | Band-specific session caps (e.g. g12 5 bridges / 75 s) | A written supersession of the locked 90 s / 6-bridge constraint, not a UX edit; it would also invalidate the shipped session copy | O-3 → product owner |
 | CI enforcement timing for the next-gen suites | Runtime/DoD scope, not design | O-4 → GAME-135 DoD |
-| Additive view-model fields the UX presents (`session deadline` block, `renderSeed`, ordered unit-based `slots`/`openSlots`/`fillOrder`, per-intent required fields) | Frozen-contract revision required; recorded as prose here, contract in BB-CONTRACT-1 | O-8 → **BB-CONTRACT-1** |
+| Additive view-model fields the UX presents (`session deadline` block, `renderSeed`, ordered unit-based `slots`/`openSlots`/`fillOrder`, per-intent required fields) | Frozen-contract revision required; recorded as prose here, contract in sanctioned BB-CONTRACT-1 | O-8 → **BB-CONTRACT-1** |
 | Locale-aware number/label formatting | Product locked to en-US; unused configuration surface today | REVIEW §4 W-15 (deferred) |
 | Licensed / bespoke audio (commissioned scoring, licensed SFX, ambient bed) | Product deliberately does not make the expressiveness investment; no provenance/licensing owner exists | MAJ-12 deferred branch → GAME-172 `Below` + owner acceptance |
 | Child-data review artefacts, SLO/error-budget programme | No PII/accounts/server-side child data in this build; operational controls in scope via MAJ-19 | REVIEW §4 W-6/W-7 → CONSULTING-182/268 |

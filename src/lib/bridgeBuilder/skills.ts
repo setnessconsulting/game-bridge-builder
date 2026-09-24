@@ -204,7 +204,7 @@ export const SKILL_DEFINITIONS: readonly SkillDefinition[] = [
     genPolicy: {
       denominator: 1,
       gapRange: { min: 5, max: 17 },
-      pieceValues: [3, 4, 5, 6, 8, 10, 12, 13, 15, 17],
+      pieceValues: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
       decoys: 2,
       parPieces: [1, 3],
       ticksVisible: false,

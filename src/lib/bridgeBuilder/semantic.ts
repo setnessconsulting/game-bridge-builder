@@ -47,26 +47,20 @@ export function deriveBridgeSemanticState(
   else if (placementOverfill || vm.verdict === "overfill") verdict = "overfill";
   else if (state.lastOutcome || state.phase === "incorrectSubmit") verdict = "underfill";
 
-  let difference = "No difference yet";
-  if (verdict === "exact") {
-    difference = "Exact: 0";
-  } else if (verdict === "overfill") {
-    const overage =
-      placementOverfill && state.lastOutcome
-        ? state.lastOutcome.diff
-        : Math.abs(Math.min(0, vm.remainingSpan));
-    difference = `Over by ${formatDiff(overage, vm.denominator)}`;
-  } else if (verdict === "underfill") {
-    difference = `Remaining ${formatDiff(
-      Math.max(0, vm.remainingSpan),
-      vm.denominator
-    )}`;
-  } else {
-    difference = `Remaining ${formatDiff(
-      Math.max(0, vm.remainingSpan),
-      vm.denominator
-    )}`;
-  }
+  const difference =
+    verdict === "exact"
+      ? "Exact: 0"
+      : verdict === "overfill"
+        ? `Over by ${formatDiff(
+            placementOverfill && state.lastOutcome
+              ? state.lastOutcome.diff
+              : Math.abs(Math.min(0, vm.remainingSpan)),
+            vm.denominator
+          )}`
+        : `Remaining ${formatDiff(
+            Math.max(0, vm.remainingSpan),
+            vm.denominator
+          )}`;
 
   let feedback = "Choose a piece, then place it on the span.";
   if (verdict === "exact") {

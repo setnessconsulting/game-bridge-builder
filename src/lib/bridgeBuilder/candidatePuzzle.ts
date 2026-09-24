@@ -1,0 +1,57 @@
+import type { BridgePuzzle } from "./types";
+
+/**
+ * The first qualification slice is intentionally deterministic. It exercises
+ * underfill, overfill, retry, undo, submit, and an exact two-piece solution
+ * without making the candidate dependent on a random seed or a network.
+ */
+export const CANDIDATE_PUZZLE: BridgePuzzle = {
+  id: "qualification-vertical-slice#1",
+  skillId: "bb-compose-10",
+  band: "g12",
+  denominator: 1,
+  gapUnits: 10,
+  gapLabel: "10 units",
+  ticksVisible: true,
+  tray: [
+    { id: "plank-4", units: 4, label: "4-unit plank", kind: "plank" },
+    { id: "plank-6", units: 6, label: "6-unit plank", kind: "plank" },
+    { id: "plank-3", units: 3, label: "3-unit plank", kind: "plank" },
+    { id: "plank-7", units: 7, label: "7-unit plank", kind: "plank" },
+    { id: "plank-5", units: 5, label: "5-unit plank", kind: "plank" },
+  ],
+  presetPlaced: [],
+  parPieces: 2,
+  solutionCount: 2,
+  // GAME-306: the qualification slice is multi-solution (4+6 and 3+7 both
+  // close the 10-unit gap), so the production candidate opts into the
+  // session second-construction path instead of forcing it off.
+  supportsSecondConstruction: true,
+  hasEquivalenceRelation: false,
+};
+
+/**
+ * GAME-305: S1 teaching round (UX_USER_FLOW §2 J1). No tutorial text — a
+ * 5-unit gap with tray [2][3] plus an oversized [8] decoy teaches by being
+ * nearly unfailable. Used only for the first-session untimed-first start so
+ * the timed qualification slice keeps its deterministic 10-unit shape.
+ */
+export const TEACHING_PUZZLE: BridgePuzzle = {
+  id: "teaching-round#1",
+  skillId: "bb-compose-10",
+  band: "g12",
+  denominator: 1,
+  gapUnits: 5,
+  gapLabel: "5 units",
+  ticksVisible: true,
+  tray: [
+    { id: "plank-2", units: 2, label: "2-unit plank", kind: "plank" },
+    { id: "plank-3", units: 3, label: "3-unit plank", kind: "plank" },
+    { id: "plank-8", units: 8, label: "8-unit plank", kind: "plank", isDecoy: true },
+  ],
+  presetPlaced: [],
+  parPieces: 2,
+  solutionCount: 1,
+  supportsSecondConstruction: false,
+  hasEquivalenceRelation: false,
+};

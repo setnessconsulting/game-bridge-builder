@@ -8,8 +8,11 @@ import {
   exactFitVerdict,
   remainingSpanUnits,
   availableTray,
+  maxShimAbs,
 } from "./exactness";
+import { previewPlacementFit } from "./engine";
 import type { BridgeIntentType } from "./intents";
+import { ROUND_CAP_BRIDGES, ROUND_CAP_SECONDS, type BridgeClockMode } from "./clock";
 import {
   bridgeSpanWidthPx,
   createBridgeLayout,
@@ -19,7 +22,7 @@ import {
 import type { BridgeSessionState } from "./session";
 import type { Piece, PlacementStatus } from "./types";
 
-export const BRIDGE_VIEW_MODEL_VERSION = "1.0.0" as const;
+export const BRIDGE_VIEW_MODEL_VERSION = "1.1.0" as const;
 
 export type BridgePresentationStateName =
   | "span"
@@ -57,7 +60,49 @@ export interface BridgePieceView {
   focused: boolean;
   dragging: boolean;
   removable: boolean;
+  /**
+   * GAME-302: true when placing this tray piece now would overhang
+   * (engine-authoritative via previewPlacementFit). Presentation only —
+   * never drives correctness.
+   */
+  oversized: boolean;
+  /** Excess past the gap if placed now; null when it fits or is a shim. */
+  excessUnits: number | null;
 }
+
+export interface BridgeSlotView {
+  /** Stable order in the engine-authored composition, never a pixel coordinate. */
+  slotIndex: number;
+  /** Exact unit offset from the start of the span. */
+  offsetUnits: number;
+  /** Exact unit contribution; signed pieces remain engine-authored values. */
+  units: number;
+  /** Present only when this slot is occupied by an engine-owned piece. */
+  pieceId: string | null;
+  open: boolean;
+}
+
+export interface BridgeViewModelSession {
+  mode: BridgeClockMode;
+  sessionId: string;
+  generation: number;
+  capSeconds: number;
+  capBridges: number;
+  /** Engine-monotonic deadline; null only in reducer-only test/harness views. */
+  deadlineMs: number | null;
+  remainingMs: number | null;
+  pauseBudgetRemainingMs: number | null;
+  expired: boolean;
+}
+
+export interface BridgeRendererCapabilities {
+  canPlace: boolean;
+  canRemove: boolean;
+  canReset: boolean;
+  canSubmit: boolean;
+}
+
+export type BridgeNumberFace = "numerals" | "dots";
 
 export interface BridgeViewModel {
   version: typeof BRIDGE_VIEW_MODEL_VERSION;
@@ -79,6 +124,18 @@ export interface BridgeViewModel {
   draggingPieceId: string | null;
   placementPreviewPieceId: string | null;
   removablePieceIds: string[];
+  /** GAME-302: tray ids that would overhang the remaining span right now. */
+  oversizedPieceIds: string[];
+  /**
+   * GAME-302: oversize detail for the current selection, if that selection
+   * would overhang. Null when nothing selected or selection fits.
+   */
+  selectedOversize: { excessUnits: number; remaining: number } | null;
+  /**
+   * GAME-302: oversize detail for the hover/focus preview target, if that
+   * target would overhang. Null when no preview or preview fits.
+   */
+  previewOversize: { pieceId: string; excessUnits: number; remaining: number } | null;
   underfill: boolean;
   overfill: boolean;
   exact: boolean;
@@ -104,6 +161,22 @@ export interface BridgeViewModel {
   layout: BridgeLayoutConfig;
   spanWidthPx: number;
   presentationGeneration: number;
+  /** Ordered exact-unit composition, including the current open slot when one exists. */
+  slots: BridgeSlotView[];
+  /** Slot indices that accept the next engine-authorized placement. */
+  openSlots: number[];
+  /** Engine-authored placement order expressed as slot indices. */
+  fillOrder: number[];
+  /** Stable presentation seed derived from puzzle identity; never drives correctness. */
+  renderSeed: number;
+  session: BridgeViewModelSession;
+  capabilities: BridgeRendererCapabilities;
+  flags: {
+    reducedMotion: boolean;
+    responsive: BridgeResponsiveBucket;
+    mute: boolean;
+    numberFace: BridgeNumberFace;
+  };
   /** Active named states for Figma / contract mapping. */
   activeStates: BridgePresentationStateName[];
 }
@@ -114,13 +187,24 @@ export interface DeriveBridgeViewModelOptions {
   focusedPieceId?: string | null;
   placementPreviewPieceId?: string | null;
   reducedMotion?: boolean;
+  muted?: boolean;
+  numberFace?: BridgeNumberFace;
+  session?: Partial<BridgeViewModelSession>;
   crossing?: boolean;
 }
 
 function responsiveBucket(width: number): BridgeResponsiveBucket {
-  if (width < 600) return "phone";
-  if (width < 960) return "tablet";
+  if (width <= 640) return "phone";
+  if (width <= 1024) return "tablet";
   return "desktop";
+}
+
+function renderSeedFor(puzzleId: string): number {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < puzzleId.length; index += 1) {
+    hash = Math.imul(hash ^ puzzleId.charCodeAt(index), 16_777_619);
+  }
+  return hash >>> 0;
 }
 
 function toPieceView(
@@ -131,6 +215,8 @@ function toPieceView(
     focused: boolean;
     dragging: boolean;
     removable: boolean;
+    oversized?: boolean;
+    excessUnits?: number | null;
   }
 ): BridgePieceView {
   return {
@@ -143,6 +229,8 @@ function toPieceView(
     focused: flags.focused,
     dragging: flags.dragging,
     removable: flags.removable,
+    oversized: flags.oversized ?? false,
+    excessUnits: flags.excessUnits ?? null,
   };
 }
 
@@ -172,22 +260,55 @@ export function deriveBridgeViewModel(
   const focusedPieceId = options.focusedPieceId ?? state.selectedPieceId;
   const placementPreviewPieceId = options.placementPreviewPieceId ?? null;
 
-  const pieceTray = tray.map((piece) =>
-    toPieceView(piece, layout, {
+  // GAME-302: engine-authoritative oversize flags. Same shim allowance as
+  // session.placePiece so tray dimming matches the reject rule exactly.
+  const shimAllowance = maxShimAbs(tray);
+  const canOversizeTeach = state.phase === "building" && remaining > 0;
+  function oversizeFor(units: number): { oversized: boolean; excessUnits: number | null } {
+    if (!canOversizeTeach) return { oversized: false, excessUnits: null };
+    const preview = previewPlacementFit(state.puzzle, filled, units, {
+      allowOvershootUpTo: shimAllowance,
+    });
+    if (!preview.wouldOverhang) return { oversized: false, excessUnits: null };
+    return { oversized: true, excessUnits: preview.excess };
+  }
+
+  const pieceTray = tray.map((piece) => {
+    const { oversized, excessUnits } = oversizeFor(piece.units);
+    return toPieceView(piece, layout, {
       selected: piece.id === state.selectedPieceId,
       focused: piece.id === focusedPieceId,
       dragging: piece.id === draggingPieceId,
       removable: false,
-    })
-  );
+      oversized,
+      excessUnits,
+    });
+  });
   const placed = state.placed.map((piece) =>
     toPieceView(piece, layout, {
       selected: false,
       focused: piece.id === focusedPieceId,
       dragging: false,
       removable: state.phase === "building",
+      oversized: false,
+      excessUnits: null,
     })
   );
+
+  const oversizedPieceIds = pieceTray.filter((p) => p.oversized).map((p) => p.id);
+  function oversizeDetailFor(pieceId: string | null): { excessUnits: number; remaining: number } | null {
+    if (!pieceId || !canOversizeTeach) return null;
+    const match = pieceTray.find((p) => p.id === pieceId);
+    if (!match?.oversized || match.excessUnits == null) return null;
+    return { excessUnits: match.excessUnits, remaining };
+  }
+  const selectedOversize = oversizeDetailFor(state.selectedPieceId);
+  const previewOversize = placementPreviewPieceId
+    ? (() => {
+        const detail = oversizeDetailFor(placementPreviewPieceId);
+        return detail ? { pieceId: placementPreviewPieceId, ...detail } : null;
+      })()
+    : null;
 
   const exact = state.phase === "exact" || verdict === "exact";
   const underfill = remaining > 0 && !exact;
@@ -199,6 +320,46 @@ export function deriveBridgeViewModel(
   const crossing = Boolean(options.crossing) && success;
   const reducedMotion = options.reducedMotion ?? false;
   const responsive = responsiveBucket(layout.canvasWidth);
+  const numberFace = options.numberFace ?? "numerals";
+  const session: BridgeViewModelSession = {
+    mode: options.session?.mode ?? "free",
+    sessionId: options.session?.sessionId ?? "unbound",
+    generation: options.session?.generation ?? state.presentationGeneration,
+    capSeconds: options.session?.capSeconds ?? ROUND_CAP_SECONDS,
+    capBridges: options.session?.capBridges ?? ROUND_CAP_BRIDGES,
+    deadlineMs: options.session?.deadlineMs ?? null,
+    remainingMs: options.session?.remainingMs ?? null,
+    pauseBudgetRemainingMs: options.session?.pauseBudgetRemainingMs ?? null,
+    expired: options.session?.expired ?? false,
+  };
+  const isLocked = session.expired;
+  const canPlace = !isLocked && state.phase === "building" && tray.length > 0;
+  const canRemove = !isLocked && state.phase === "building" && placed.length > 0;
+  const canSubmit = !isLocked && state.phase !== "exact" && placed.length > 0;
+  const slots: BridgeSlotView[] = [];
+  let offsetUnits = 0;
+  placed.forEach((piece, slotIndex) => {
+    slots.push({
+      slotIndex,
+      offsetUnits,
+      units: piece.units,
+      pieceId: piece.id,
+      open: false,
+    });
+    offsetUnits += piece.units;
+  });
+  const openSlots: number[] = [];
+  if (!isLocked && state.phase === "building" && remaining > 0) {
+    const slotIndex = slots.length;
+    slots.push({
+      slotIndex,
+      offsetUnits,
+      units: remaining,
+      pieceId: null,
+      open: true,
+    });
+    openSlots.push(slotIndex);
+  }
 
   const activeStates: BridgePresentationStateName[] = [
     "span",
@@ -241,6 +402,9 @@ export function deriveBridgeViewModel(
     draggingPieceId,
     placementPreviewPieceId,
     removablePieceIds: placed.filter((p) => p.removable).map((p) => p.id),
+    oversizedPieceIds,
+    selectedOversize,
+    previewOversize,
     underfill,
     overfill,
     exact,
@@ -266,6 +430,23 @@ export function deriveBridgeViewModel(
     layout,
     spanWidthPx: bridgeSpanWidthPx(state.puzzle.gapUnits, layout),
     presentationGeneration: state.presentationGeneration,
+    slots,
+    openSlots,
+    fillOrder: placed.map((_, slotIndex) => slotIndex),
+    renderSeed: renderSeedFor(state.puzzle.id),
+    session,
+    capabilities: {
+      canPlace,
+      canRemove,
+      canReset: !isLocked,
+      canSubmit,
+    },
+    flags: {
+      reducedMotion,
+      responsive,
+      mute: options.muted ?? false,
+      numberFace,
+    },
     activeStates,
   };
 }

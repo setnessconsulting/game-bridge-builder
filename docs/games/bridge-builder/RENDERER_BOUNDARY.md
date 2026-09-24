@@ -28,7 +28,7 @@ only and must never feed back into verdicts.
 | Exact / underfill / overfill / overshoot verdicts | `evaluatePlacement` + session |
 | Scoring, stars, hints, adaptivity inputs | Existing `engine` / `hints` / `adaptive` |
 | Telemetry event payloads (no PII) | `telemetry.ts` |
-| Session limits (90 s / 6 bridges) | Session facts; host owns timers |
+| Session deadline, expiry, 90 s / 6-bridge cap, hidden-tab pause credit | Engine-owned monotonic clock in `clock.ts`; host supplies visibility/route/save signals |
 
 ## What the renderer may own
 
@@ -55,6 +55,11 @@ Closed union in `src/lib/bridgeBuilder/intents.ts`:
 
 Pointer coordinates may be used only to decide *which* intent and *which*
 `pieceId`. They must not carry a length or alter `units`.
+
+At the renderer/host boundary each intent also carries `seq`, `sessionId`, and
+`generation`. The host validates all three and drops stale, duplicate, malformed,
+or wrong-session envelopes before the reducer. The action union remains the same
+eight members; metadata does not add gameplay verbs.
 
 ## Explicitly forbidden
 

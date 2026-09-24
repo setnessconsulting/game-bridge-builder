@@ -26,7 +26,7 @@ const puzzle: BridgePuzzle = {
   gapLabel: "10",
   ticksVisible: true,
   tray: [
-    { id: "a", units: 4, label: "4", kind: "plank" },
+    { id: "a", units: 4, label: "4", kind: "plank", isDecoy: true },
     { id: "b", units: 6, label: "6", kind: "plank" },
     { id: "c", units: 3, label: "3", kind: "plank" },
     { id: "d", units: 7, label: "7", kind: "plank" },
@@ -52,6 +52,7 @@ describe("GAME-130 view model contract", () => {
     });
 
     expect(vm.version).toBe(BRIDGE_VIEW_MODEL_VERSION);
+    expect(vm.version).toBe("1.1.0");
     expect(vm.span).toBe(10);
     expect(vm.filledUnits).toBe(4);
     expect(vm.remainingSpan).toBe(6);
@@ -60,11 +61,22 @@ describe("GAME-130 view model contract", () => {
     expect(vm.exact).toBe(false);
     expect(vm.pieceTray.some((p) => p.id === "a")).toBe(false);
     expect(vm.placed[0]?.units).toBe(4);
+    expect(vm.pieces.every((piece) => !("isDecoy" in piece))).toBe(true);
     expect(vm.placed[0]?.widthPx).toBe(96);
     expect(vm.focusedPieceId).toBe("b");
     expect(vm.activeStates).toContain("underfill");
     expect(vm.activeStates).toContain("remainingSpan");
     expect(vm.responsive).toBe("tablet");
+    expect(vm.slots).toEqual([
+      { slotIndex: 0, offsetUnits: 0, units: 4, pieceId: "a", open: false },
+      { slotIndex: 1, offsetUnits: 4, units: 6, pieceId: null, open: true },
+    ]);
+    expect(vm.openSlots).toEqual([1]);
+    expect(vm.fillOrder).toEqual([0]);
+    expect(vm.renderSeed).toBeTypeOf("number");
+    expect(vm.session.sessionId).toBe("unbound");
+    expect(vm.capabilities).toMatchObject({ canPlace: true, canRemove: true, canSubmit: true });
+    expect(vm.flags).toMatchObject({ reducedMotion: false, mute: false, numberFace: "numerals" });
   });
 
   it("keeps pixel conversion at the view boundary", () => {
@@ -100,6 +112,16 @@ describe("GAME-130 view model contract", () => {
     expect(after.layout.dpr).toBe(2);
   });
 
+  it("uses the documented responsive breakpoints", () => {
+    const state = createBridgeSession(puzzle);
+    const buckets = [640, 641, 1024, 1025].map((canvasWidth) =>
+      deriveBridgeViewModel(state, {
+        layout: createBridgeLayout({ canvasWidth, canvasHeight: 360 }),
+      }).responsive,
+    );
+    expect(buckets).toEqual(["phone", "tablet", "tablet", "desktop"]);
+  });
+
   it("exposes an exhaustive closed intent allowlist", () => {
     expect([...RENDERER_ALLOWED_INTENTS].sort()).toEqual([...BRIDGE_INTENT_TYPES].sort());
   });
@@ -114,5 +136,67 @@ describe("GAME-130 view model contract", () => {
     expect(withCrossing.crossing).toBe(true);
     expect(withCrossing.activeStates).toContain("crossing");
     expect(withCrossing.filledUnits).toBe(without.filledUnits);
+    expect(withCrossing.openSlots).toEqual([]);
+    expect(withCrossing.fillOrder).toEqual([0, 1]);
+    expect(withCrossing.renderSeed).toBe(without.renderSeed);
+  });
+
+  it("exposes engine deadline metadata and accessibility presentation flags", () => {
+    const state = createBridgeSession(puzzle);
+    const vm = deriveBridgeViewModel(state, {
+      session: {
+        mode: "break",
+        sessionId: "break-session",
+        generation: 9,
+        capSeconds: 30,
+        capBridges: 1,
+        deadlineMs: 45_000,
+        remainingMs: 12_000,
+        pauseBudgetRemainingMs: 0,
+        expired: false,
+      },
+      reducedMotion: true,
+      muted: true,
+      numberFace: "dots",
+    });
+    expect(vm.session).toMatchObject({
+      mode: "break",
+      sessionId: "break-session",
+      generation: 9,
+      deadlineMs: 45_000,
+      remainingMs: 12_000,
+      pauseBudgetRemainingMs: 0,
+      expired: false,
+    });
+    expect(vm.flags).toMatchObject({ reducedMotion: true, mute: true, numberFace: "dots" });
+    expect(vm.openSlots).toEqual([0]);
+    expect(vm.capabilities.canSubmit).toBe(false);
+  });
+
+  it("closes open slots on overfill and freezes every renderer capability after expiry", () => {
+    const overfilledState = {
+      ...createBridgeSession(puzzle),
+      placed: [puzzle.tray[3]!, puzzle.tray[1]!],
+      lastOutcome: { status: "overhang" as const, diff: 3, filledAfter: 13 },
+    };
+    const overfilled = deriveBridgeViewModel(overfilledState);
+    expect(overfilled.remainingSpan).toBe(-3);
+    expect(overfilled.openSlots).toEqual([]);
+    expect(overfilled.slots.every((slot) => !slot.open)).toBe(true);
+
+    const state = applyBridgeIntent(createBridgeSession(puzzle), {
+      type: "placePiece",
+      pieceId: "a",
+    }).state;
+    const expired = deriveBridgeViewModel(state, {
+      session: { sessionId: "expired-session", generation: 2, expired: true },
+    });
+    expect(expired.openSlots).toEqual([]);
+    expect(expired.capabilities).toEqual({
+      canPlace: false,
+      canRemove: false,
+      canReset: false,
+      canSubmit: false,
+    });
   });
 });

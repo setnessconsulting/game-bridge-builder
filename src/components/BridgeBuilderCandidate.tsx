@@ -1,0 +1,1359 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, DragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
+import {
+  advanceBridgeClock,
+  applyBridgeHostSignal,
+  createBridgeClock,
+  expireBridgeClockAtCap,
+  formatClockMs,
+  type BridgeClockState,
+} from "@/lib/bridgeBuilder/clock";
+import { CANDIDATE_PUZZLE, TEACHING_PUZZLE } from "@/lib/bridgeBuilder/candidatePuzzle";
+import {
+  createBridgeIntent,
+  validateBridgeIntent,
+  type BridgeIntent,
+  type BridgeIntentAction,
+  type BridgeIntentContext,
+  type BridgeIntentRejectionReason,
+} from "@/lib/bridgeBuilder/intents";
+import { createSessionSink } from "@/lib/bridgeBuilder/telemetry";
+import { createBridgeLayout } from "@/lib/bridgeBuilder/layout";
+import {
+  applyBridgeIntent,
+  beginSecondBuild,
+  createBridgeSession,
+  type BridgeSessionState,
+  type BridgeSessionEffect,
+} from "@/lib/bridgeBuilder/session";
+import { availableTray, compositionUnits, maxShimAbs } from "@/lib/bridgeBuilder/exactness";
+import {
+  SECOND_BUILD_POINTS,
+  canShowSecondOffer,
+  previewPlacementFit,
+} from "@/lib/bridgeBuilder/engine";
+import {
+  amountPhrase,
+  tooLongForCopy,
+  tooLongShortCopy,
+} from "@/lib/bridgeBuilder/oversizeTeach";
+import { formatScaled } from "@/lib/bridgeBuilder/format";
+import { createQualificationRound } from "@/lib/bridgeBuilder/qualificationRound";
+import {
+  bridgesClosedLine,
+  clockEndedReasonLine,
+  coachingLineForTimeout,
+  timedChallengeCtaLabel,
+  timeoutHeadline,
+  untimedRetryCtaLabel,
+} from "@/lib/bridgeBuilder/timeoutCoaching";
+import {
+  firstSessionLeadCopy,
+  firstSessionTimedCopy,
+  isRelaxedAvailableForSurface,
+  persistRelaxedChoice,
+  resolveRelaxedOnboarding,
+  type RelaxedSurface,
+} from "@/lib/bridgeBuilder/relaxedOnboarding";
+import { compositionUnits as coachingCompositionUnits } from "@/lib/bridgeBuilder/exactness";
+import { closeBridgeSoundContext, playBridgeCue } from "@/lib/bridgeBuilder/sound";
+import type { BridgePuzzle, Piece } from "@/lib/bridgeBuilder/types";
+import carSpriteUrl from "@/assets/bridge-builder/car-sprite.png";
+import { deriveBridgeViewModel, type BridgeNumberFace, type BridgeViewModel } from "@/lib/bridgeBuilder/viewModel";
+import BridgeCanvas from "./BridgeCanvas";
+
+function lastPlaced(state: BridgeSessionState): Piece | undefined {
+  return state.placed[state.placed.length - 1];
+}
+
+const CROSSING_PRESENTATION_MS = 1_200;
+// GAME-306: second-construction card lifetime (UX MAJ-22). This is a
+// lifetime, not a gate — the next puzzle advances on its normal 900–1500 ms
+// schedule and the card auto-dismisses without ever blocking pacing.
+const SECOND_BUILD_OFFER_LIFETIME_MS = 5_000;
+
+interface SecondBuildOffer {
+  puzzle: BridgePuzzle;
+  puzzleIndex: number;
+  solveNumber: number;
+  key: string;
+}
+
+function remainingPhrase(value: number, denominator: number): string {
+  return `${amountPhrase(value, denominator)} ${Math.abs(value) === denominator ? "remains" : "remain"}`;
+}
+
+export { tooLongForCopy, tooLongShortCopy };
+
+function feedbackFor(state: BridgeSessionState): string {
+  if (state.phase === "exact") return "Exact fit. The crossing is ready.";
+  if (state.phase === "incorrectSubmit") {
+    return state.lastOutcome?.status === "partial"
+      ? `Still short by ${amountPhrase(state.lastOutcome.diff, state.puzzle.denominator)}. The car is stuck at the unfinished bridge.`
+      : `Too long by ${amountPhrase(state.lastOutcome?.diff ?? 0, state.puzzle.denominator)}. The car slips into the water.`;
+  }
+  if (state.lastOutcome?.status === "overhang") {
+    const filled = compositionUnits(state.puzzle, state.placed);
+    const remaining = state.puzzle.gapUnits - filled;
+    const label = state.lastOverhang?.label ?? "That plank";
+    if (remaining > 0) {
+      return `${tooLongForCopy({
+        pieceLabel: label,
+        remaining,
+        excess: state.lastOutcome.diff,
+        denominator: state.puzzle.denominator,
+      })} The car slips into the water.`;
+    }
+    return `Too long by ${amountPhrase(state.lastOutcome.diff, state.puzzle.denominator)}. The car slips into the water. Choose a shorter plank.`;
+  }
+  if (state.lastOutcome?.status === "partial") {
+    return `Placed. ${remainingPhrase(state.puzzle.gapUnits - state.lastOutcome.filledAfter, state.puzzle.denominator)}. Add another plank.`;
+  }
+  // GAME-302: selecting an oversized plank previews the refusal before commit.
+  if (state.phase === "building" && state.selectedPieceId && state.lastOutcome == null) {
+    const filled = compositionUnits(state.puzzle, state.placed);
+    const tray = availableTray(state.tray, state.placed);
+    const selected = tray.find((piece) => piece.id === state.selectedPieceId);
+    if (selected) {
+      const preview = previewPlacementFit(state.puzzle, filled, selected.units, {
+        allowOvershootUpTo: maxShimAbs(tray),
+      });
+      if (preview.wouldOverhang && preview.remaining > 0) {
+        return tooLongForCopy({
+          pieceLabel: selected.label,
+          remaining: preview.remaining,
+          excess: preview.excess,
+          denominator: state.puzzle.denominator,
+        });
+      }
+    }
+  }
+  return "Choose a plank, then place it in the open span.";
+}
+
+function formatPoints(state: BridgeSessionState): string {
+  return `${state.score} points`;
+}
+
+function newSessionId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `bb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function pieceLabel(piece: { units: number; label: string }): string {
+  return `${piece.units} unit${Math.abs(piece.units) === 1 ? "" : "s"} plank`;
+}
+
+function targetSpanLabel(puzzle: BridgePuzzle): string {
+  const value = formatScaled(puzzle.gapUnits, puzzle.denominator);
+  const unit = Math.abs(puzzle.gapUnits) === puzzle.denominator ? "unit" : "units";
+  return `${value} ${unit}`;
+}
+
+function questionText(puzzle: BridgePuzzle, bridgeNumber: number): string {
+  const target = `${formatScaled(puzzle.gapUnits, puzzle.denominator)}-unit span`;
+  const instruction = puzzle.presetPlaced.length > 0
+    ? `Finish the ${target} by filling the missing amount.`
+    : `Build the ${target} using the planks.`;
+  return `Bridge ${bridgeNumber}: ${instruction}`;
+}
+
+function vehicleState(viewModel: BridgeViewModel): "ready" | "crossing" | "parked" | "stuck" | "falling" {
+  if (viewModel.overfill) return "falling";
+  if (viewModel.incorrectSubmit && viewModel.verdict === "underfill") return "stuck";
+  if (viewModel.crossing) return "crossing";
+  if (viewModel.exact) return "parked";
+  return "ready";
+}
+
+function PieceFace({
+  units,
+  label,
+  mode,
+}: {
+  units: number;
+  label: string;
+  mode: BridgeNumberFace;
+}) {
+  if (mode === "dots" && Number.isInteger(units) && units > 0 && units <= 10) {
+    return (
+      <span className="bb-dot-face" aria-hidden="true" data-testid="dot-face">
+        {Array.from({ length: units }, (_, index) => (
+          <span className="bb-dot" key={index} />
+        ))}
+      </span>
+    );
+  }
+  return <span aria-hidden="true">{label}</span>;
+}
+
+export default function BridgeBuilderCandidate({ surface = "free" }: { surface?: RelaxedSurface } = {}) {
+  const roundSeedRef = useRef(20_260_919);
+  const [roundPuzzles, setRoundPuzzles] = useState(() =>
+    createQualificationRound(20_260_918, { firstPuzzle: CANDIDATE_PUZZLE }),
+  );
+  const [session, setSession] = useState<BridgeSessionState>(() =>
+    createBridgeSession(roundPuzzles[0] ?? CANDIDATE_PUZZLE),
+  );
+  const [clock, setClock] = useState<BridgeClockState>(() =>
+    createBridgeClock({ nowMs: performance.now() }),
+  );
+  const [intentContext, setIntentContext] = useState<BridgeIntentContext>(() => ({
+    sessionId: newSessionId(),
+    generation: 0,
+  }));
+  const intentContextRef = useRef(intentContext);
+  const intentSequenceRef = useRef(0);
+  const lastAcceptedSequenceRef = useRef(0);
+  const telemetryRef = useRef(createSessionSink("free", () => performance.now()));
+  const retryNoticeTimerRef = useRef<number | null>(null);
+  const presentationDispatchRef = useRef<() => void>(() => {});
+  const [hasStarted, setHasStarted] = useState(false);
+  // GAME-304 / GAME-305: Relaxed (untimed) round shape in the production
+  // candidate. Free site only; never extends an expired clock — the untimed
+  // retry always starts a NEW session (new sessionId + generation).
+  const [onboarding] = useState(() => resolveRelaxedOnboarding());
+  // GAME-305: a first-time player is led to the untimed path (learn default),
+  // and their explicit Relaxed choice is remembered for later visits.
+  const [firstSession, setFirstSession] = useState(onboarding.firstSession);
+  const [relaxed, setRelaxed] = useState(onboarding.rememberedRelaxed ?? false);
+  // GAME-305 containment: Relaxed never renders inside an earned-break host.
+  const relaxedAvailable = isRelaxedAvailableForSurface(surface);
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true,
+  );
+  const [muted, setMuted] = useState(false);
+  const [numberFace, setNumberFace] = useState<BridgeNumberFace>("numerals");
+  const [paused, setPaused] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ width: 640, height: 360 });
+  const [announcement, setAnnouncement] = useState(feedbackFor(session));
+  const [intentIssue, setIntentIssue] = useState<string | null>(null);
+  const [rendererStatus, setRendererStatus] = useState<"loading" | "ready" | "failed">("loading");
+  // GAME-302: hover/focus preview target for soft overhang affordance.
+  const [hoveredPieceId, setHoveredPieceId] = useState<string | null>(null);
+  // GAME-297: HTML5 drag lift. Presentation only — passed as
+  // draggingPieceId so Phaser and DOM share one dragged vocabulary.
+  const [draggingPieceId, setDraggingPieceId] = useState<string | null>(null);
+  // GAME-302: increments on every refused (overhang) place attempt so repeated
+  // identical refusals still produce visible + announced feedback (no silent no-op).
+  const [deniedPulse, setDeniedPulse] = useState(0);
+  // GAME-306: non-blocking inline second-construction offer. Independent of
+  // the session puzzle so it outlives the 900–1500 ms transition to the next
+  // bridge (lifetime, not a gate). Accept reloads the solved puzzle via
+  // `beginSecondBuild`; decline/timeout only dismisses the card.
+  const [secondOffer, setSecondOffer] = useState<SecondBuildOffer | null>(null);
+  // GAME-306: position in `roundPuzzles`, tracked separately from
+  // `bridgesSolved` because a second construction counts as a solved bridge
+  // without consuming a new puzzle.
+  const [puzzleCursor, setPuzzleCursor] = useState(0);
+  const secondOfferTimerRef = useRef<number | null>(null);
+  const soundRef = useRef<AudioContext | null>(null);
+  const finishCuePlayedRef = useRef(false);
+  // GAME-303: layout hook so timeout / round-complete feedback is never left
+  // below the fold inside a scroll trap — scrolled into view on appearance.
+  const expiredNoticeRef = useRef<HTMLDivElement | null>(null);
+  const summaryRef = useRef<HTMLElement | null>(null);
+
+  const layout = useMemo(
+    () => createBridgeLayout({ canvasWidth: canvasSize.width, canvasHeight: canvasSize.height }),
+    [canvasSize],
+  );
+  // GAME-304: Relaxed rounds never expire on the clock — only the
+  // 6-construction cap ends them. Timed rounds expire on either.
+  const clockExpired = !relaxed && (clock.expired || clock.remainingMs === 0);
+  const capReached = session.bridgesSolved >= clock.capBridges;
+  const expired = clockExpired || capReached;
+  const clockEnded = !relaxed && clockExpired && !capReached;
+  const currentPuzzleIndex = Math.max(
+    0,
+    roundPuzzles.findIndex((puzzle) => puzzle.id === session.puzzle.id),
+  );
+  const roundComplete = expired || capReached;
+  // GAME-304: deterministic coaching for the clock-ended summary. Derived
+  // from round stats so the same state always yields the same line.
+  const timeoutCoaching = coachingLineForTimeout({
+    bridgesSolved: session.bridgesSolved,
+    filledUnits: coachingCompositionUnits(session.puzzle, session.placed),
+    gapUnits: session.puzzle.gapUnits,
+    denominator: session.puzzle.denominator,
+    attempts: session.attempts,
+    failedPlacements: session.failedPlacements,
+  });
+  const viewModel = useMemo(
+    () =>
+      deriveBridgeViewModel(session, {
+        layout,
+        reducedMotion,
+        muted,
+        numberFace,
+        crossing: session.phase === "exact" && !reducedMotion,
+        draggingPieceId,
+        placementPreviewPieceId: hoveredPieceId,
+        session: {
+          mode: clock.mode,
+          sessionId: intentContext.sessionId,
+          generation: intentContext.generation,
+          capSeconds: clock.capSeconds,
+          capBridges: clock.capBridges,
+          // GAME-304: Relaxed rounds carry no deadline — null, not zero.
+          deadlineMs: relaxed ? null : clock.deadlineMs,
+          remainingMs: relaxed ? null : clock.remainingMs,
+          pauseBudgetRemainingMs: clock.pauseBudgetRemainingMs,
+          expired,
+        },
+      }),
+    [clock, draggingPieceId, expired, hoveredPieceId, intentContext, layout, muted, numberFace, reducedMotion, relaxed, session],
+  );
+  const availablePieces = viewModel.pieceTray;
+  const selectedPiece = session.selectedPieceId
+    ? session.puzzle.tray.find((piece) => piece.id === session.selectedPieceId)
+    : undefined;
+
+  function playEffects(effects: readonly BridgeSessionEffect[]): void {
+    if (muted) return;
+    for (const effect of effects) {
+      if (effect.type === "cue") playBridgeCue(soundRef, effect.cue);
+    }
+  }
+
+  function playCue(cue: "pickup" | "finish"): void {
+    if (!muted) playBridgeCue(soundRef, cue);
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = () => setReducedMotion(media.matches);
+    media.addEventListener?.("change", onChange);
+    return () => media.removeEventListener?.("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!hasStarted || relaxed) return;
+    const timer = window.setInterval(() => {
+      setClock((previous) => advanceBridgeClock(previous, performance.now()));
+    }, 200);
+    const onVisibility = () => {
+      setClock((previous) =>
+        applyBridgeHostSignal(previous, {
+          type: "visibility",
+          hidden: document.hidden,
+          atMs: performance.now(),
+        }),
+      );
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [hasStarted, relaxed]);
+
+  // GAME-304: clock-ended announcement is coaching, never the bare
+  // administrative freeze line. Relaxed cap-complete keeps its own summary.
+  useEffect(() => {
+    if (clockEnded && session.phase !== "exact") {
+      setAnnouncement(
+        `${timeoutHeadline()} ${bridgesClosedLine(session.bridgesSolved)} ${timeoutCoaching}`,
+      );
+    }
+  }, [clockEnded, session.bridgesSolved, session.phase, timeoutCoaching]);
+
+  useEffect(() => {
+    setClock((previous) => expireBridgeClockAtCap(previous, session.bridgesSolved));
+  }, [session.bridgesSolved]);
+
+  useEffect(() => {
+    if (
+      session.phase !== "exact" ||
+      expired ||
+      session.bridgesSolved >= clock.capBridges
+    ) {
+      return;
+    }
+    if (reducedMotion) {
+      presentationDispatchRef.current();
+      return;
+    }
+    const timer = window.setTimeout(() => presentationDispatchRef.current(), CROSSING_PRESENTATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [clock.capBridges, expired, reducedMotion, session.bridgesSolved, session.phase, session.presentationGeneration]);
+
+  useEffect(() => {
+    if (session.phase !== "awaitingContinue" || expired || session.bridgesSolved >= clock.capBridges) return;
+
+    // GAME-306: advance by round position, not by solve count — a second
+    // construction counts as a solved bridge without consuming a new puzzle.
+    const fromPuzzleId = session.puzzle.id;
+    const nextPuzzleIndex = puzzleCursor + 1;
+    const nextPuzzle = roundPuzzles[nextPuzzleIndex];
+    if (!nextPuzzle) return;
+
+    const nextContext = {
+      ...intentContextRef.current,
+      generation: intentContextRef.current.generation + 1,
+    };
+    intentContextRef.current = nextContext;
+    setIntentContext(nextContext);
+    setRendererStatus("loading");
+    clearIntentIssue();
+    setPuzzleCursor(nextPuzzleIndex);
+    setSession((previous) => {
+      if (previous.phase !== "awaitingContinue" || previous.puzzle.id !== fromPuzzleId) {
+        return previous;
+      }
+      return createBridgeSession(nextPuzzle, {
+        score: previous.score,
+        starsTotal: previous.starsTotal,
+        bridgesSolved: previous.bridgesSolved,
+        maxBridges: previous.maxBridges,
+        sessionSeconds: previous.sessionSeconds,
+      });
+    });
+    setAnnouncement(questionText(nextPuzzle, nextPuzzleIndex + 1));
+  }, [clock.capBridges, expired, puzzleCursor, roundPuzzles, session.bridgesSolved, session.phase, session.puzzle.id]);
+
+  // GAME-306: the 5 s offer lifetime. Fires once per card, never extends
+  // pacing, never re-fires for the same puzzle.
+  useEffect(() => {
+    if (!secondOffer) return;
+    const offer = secondOffer;
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+    }
+    secondOfferTimerRef.current = window.setTimeout(() => {
+      telemetryRef.current.emit("second_build", {
+        accepted: false,
+        timedOut: true,
+        puzzleId: offer.puzzle.id,
+      });
+      setSecondOffer((current) => (current?.key === offer.key ? null : current));
+      secondOfferTimerRef.current = null;
+    }, SECOND_BUILD_OFFER_LIFETIME_MS);
+    return () => {
+      if (secondOfferTimerRef.current !== null) {
+        window.clearTimeout(secondOfferTimerRef.current);
+        secondOfferTimerRef.current = null;
+      }
+    };
+  }, [secondOffer]);
+
+  // GAME-306: never at round end — the card clears the moment the round
+  // completes instead of lingering over the summary.
+  useEffect(() => {
+    if (roundComplete && secondOffer) {
+      if (secondOfferTimerRef.current !== null) {
+        window.clearTimeout(secondOfferTimerRef.current);
+        secondOfferTimerRef.current = null;
+      }
+      setSecondOffer(null);
+    }
+  }, [roundComplete, secondOffer]);
+
+  useEffect(() => () => {
+    if (retryNoticeTimerRef.current !== null) {
+      window.clearTimeout(retryNoticeTimerRef.current);
+    }
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+    }
+    closeBridgeSoundContext(soundRef);
+  }, []);
+
+  useEffect(() => {
+    if (session.bridgesSolved >= clock.capBridges && !finishCuePlayedRef.current) {
+      playCue("finish");
+      finishCuePlayedRef.current = true;
+    }
+    if (session.bridgesSolved < clock.capBridges) finishCuePlayedRef.current = false;
+  }, [clock.capBridges, muted, session.bridgesSolved]);
+
+  // GAME-303: keep place/submit/timeout feedback on screen. The primary
+  // footer (Check it + live status) is sticky via CSS; the timeout and
+  // round-complete notices render after the board, so bring them into view
+  // when they appear. block:"nearest" never moves an already-visible notice,
+  // and reduced-motion users get an instant jump (no smooth scroll).
+  useEffect(() => {
+    if (!hasStarted) return;
+    const target = roundComplete ? summaryRef.current : expired ? expiredNoticeRef.current : null;
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "nearest" });
+    }
+  }, [expired, roundComplete, hasStarted, reducedMotion]);
+
+  // GAME-305: the first-session setup is taller than the returning setup, so
+  // the browser can leave a residual scroll offset after Start. The primary
+  // loop must begin at the top (GAME-303), so reset it deterministically when
+  // a round begins.
+  useEffect(() => {
+    if (!hasStarted) return;
+    if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }
+  }, [hasStarted]);
+
+  function clearIntentIssue() {
+    if (retryNoticeTimerRef.current !== null) {
+      window.clearTimeout(retryNoticeTimerRef.current);
+      retryNoticeTimerRef.current = null;
+    }
+    setIntentIssue(null);
+  }
+
+  function createIntent(action: BridgeIntentAction, context: BridgeIntentContext): BridgeIntent {
+    intentSequenceRef.current += 1;
+    return createBridgeIntent(action, context, intentSequenceRef.current);
+  }
+
+  function rejectIntent(reason: BridgeIntentRejectionReason | string, intentType?: string) {
+    const safeReason: BridgeIntentRejectionReason = [
+      "invalid-shape",
+      "unknown-intent",
+      "invalid-piece-id",
+      "invalid-sequence",
+      "invalid-session",
+      "invalid-generation",
+      "stale-session",
+      "stale-generation",
+      "duplicate-sequence",
+      "stale-sequence",
+    ].includes(reason)
+      ? (reason as BridgeIntentRejectionReason)
+      : "invalid-shape";
+    const stale = ["stale-session", "stale-generation", "duplicate-sequence", "stale-sequence"].includes(safeReason);
+    telemetryRef.current.emit(stale ? "stale_intent_dropped" : "invalid_intent_rejected", {
+      reason: safeReason,
+      intentType: typeof intentType === "string" ? intentType : "unknown",
+    });
+    clearIntentIssue();
+    retryNoticeTimerRef.current = window.setTimeout(() => {
+      setIntentIssue("That action could not be used. Tap again to retry.");
+      retryNoticeTimerRef.current = null;
+    }, 500);
+  }
+
+  // GAME-306: surface the session `offerSecondBuild` effect as a
+  // non-blocking inline card. Host-level suppression (round end, earned
+  // break) can only hide the card — the session effect itself is untouched.
+  function maybeShowSecondOffer(
+    next: BridgeSessionState,
+    offered: boolean,
+    solvedPuzzleIndex: number,
+  ): void {
+    if (!offered) return;
+    const nextCapReached = next.bridgesSolved >= clock.capBridges;
+    const nextExpired = (!relaxed && (clock.expired || clock.remainingMs === 0)) || nextCapReached;
+    if (!canShowSecondOffer({
+      offered: true,
+      expired: nextExpired,
+      capReached: nextCapReached,
+      isBreak: clock.mode === "break",
+    })) {
+      return;
+    }
+    const offer: SecondBuildOffer = {
+      puzzle: next.puzzle,
+      puzzleIndex: solvedPuzzleIndex,
+      solveNumber: next.bridgesSolved,
+      key: `${next.puzzle.id}#${next.bridgesSolved}`,
+    };
+    telemetryRef.current.emit("second_build", {
+      offered: true,
+      puzzleId: next.puzzle.id,
+    });
+    setSecondOffer(offer);
+  }
+
+  function dispatch(intent: BridgeIntent) {
+    const validation = validateBridgeIntent(intent, {
+      ...intentContextRef.current,
+      lastSeq: lastAcceptedSequenceRef.current,
+    });
+    if (!validation.ok) {
+      rejectIntent(validation.reason, "type" in intent ? String(intent.type) : "unknown");
+      return;
+    }
+    lastAcceptedSequenceRef.current = validation.intent.seq;
+    clearIntentIssue();
+    if (!hasStarted || expired) return;
+    if (session.phase === "exact" && validation.intent.type !== "presentationComplete") return;
+    if (validation.intent.type === "selectPiece") playCue("pickup");
+    const result = applyBridgeIntent(session, validation.intent);
+    playEffects(result.effects);
+    setSession(result.state);
+    maybeShowSecondOffer(
+      result.state,
+      result.effects.some((effect) => effect.type === "offerSecondBuild"),
+      currentPuzzleIndex,
+    );
+    // GAME-302: every refused overhang must pulse visible + announced feedback.
+    if (result.state.lastOutcome?.status === "overhang") {
+      setDeniedPulse((pulse) => pulse + 1);
+    }
+    setAnnouncement(feedbackFor(result.state));
+  }
+
+  function dispatchAction(action: BridgeIntentAction) {
+    dispatch(createIntent(action, intentContextRef.current));
+  }
+
+  presentationDispatchRef.current = () => dispatchAction({ type: "presentationComplete" });
+
+  function dispatchSequence(actions: readonly BridgeIntentAction[]) {
+    if (!hasStarted || expired || session.phase === "exact") return;
+    let next = session;
+    let offered = false;
+    for (const action of actions) {
+      const intent = createIntent(action, intentContextRef.current);
+      const validation = validateBridgeIntent(intent, {
+        ...intentContextRef.current,
+        lastSeq: lastAcceptedSequenceRef.current,
+      });
+      if (!validation.ok) {
+        rejectIntent(validation.reason, action.type);
+        return;
+      }
+      lastAcceptedSequenceRef.current = validation.intent.seq;
+      if (validation.intent.type === "selectPiece") playCue("pickup");
+      const result = applyBridgeIntent(next, validation.intent);
+      playEffects(result.effects);
+      if (result.effects.some((effect) => effect.type === "offerSecondBuild")) {
+        offered = true;
+      }
+      next = result.state;
+    }
+    clearIntentIssue();
+    setSession(next);
+    maybeShowSecondOffer(next, offered, currentPuzzleIndex);
+    // GAME-302: refused overhang (including select+place in one click) must
+    // never be a silent no-op — pulse visible + announced feedback.
+    if (next.lastOutcome?.status === "overhang") {
+      setDeniedPulse((pulse) => pulse + 1);
+    }
+    setAnnouncement(feedbackFor(next));
+  }
+
+  // GAME-306: accept starts a second construction on the solved puzzle via
+  // the existing session path. The card may have outlived the transition to
+  // the next bridge, so the offer puzzle is reloaded explicitly.
+  function acceptSecondOffer(): void {
+    if (!secondOffer || roundComplete) return;
+    const offer = secondOffer;
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+      secondOfferTimerRef.current = null;
+    }
+    setSecondOffer(null);
+    telemetryRef.current.emit("second_build", { accepted: true, puzzleId: offer.puzzle.id });
+    const nextContext = {
+      ...intentContextRef.current,
+      generation: intentContextRef.current.generation + 1,
+    };
+    intentContextRef.current = nextContext;
+    setIntentContext(nextContext);
+    setRendererStatus("loading");
+    clearIntentIssue();
+    setPuzzleCursor(offer.puzzleIndex);
+    setHoveredPieceId(null);
+    setDraggingPieceId(null);
+    setDeniedPulse(0);
+    setSession((previous) => beginSecondBuild(createBridgeSession(offer.puzzle, {
+      score: previous.score,
+      starsTotal: previous.starsTotal,
+      bridgesSolved: previous.bridgesSolved,
+      maxBridges: previous.maxBridges,
+      sessionSeconds: previous.sessionSeconds,
+    })));
+    setAnnouncement("Same gap, different planks. Build it another way!");
+  }
+
+  // GAME-306: warm decline — as warm as the accept, never shaming. Dismissal
+  // only hides the card; the next bridge already advanced (or advances) on
+  // its normal schedule, so pacing is never blocked.
+  function declineSecondOffer(timedOut: boolean): void {
+    if (!secondOffer) return;
+    const offer = secondOffer;
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+      secondOfferTimerRef.current = null;
+    }
+    setSecondOffer(null);
+    telemetryRef.current.emit("second_build", {
+      accepted: false,
+      timedOut,
+      puzzleId: offer.puzzle.id,
+    });
+  }
+
+  function togglePause() {
+    // GAME-304: Relaxed rounds carry no clock, so there is nothing to pause.
+    if (!hasStarted || expired || relaxed) return;
+    const nextPaused = !paused;
+    setPaused(nextPaused);
+    setClock((previous) =>
+      applyBridgeHostSignal(previous, {
+        type: "route",
+        active: !nextPaused,
+        atMs: performance.now(),
+      }),
+    );
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key.toLowerCase() === "u") {
+      const piece = lastPlaced(session);
+      if (piece) {
+        event.preventDefault();
+        dispatchAction({ type: "removePiece", pieceId: piece.id });
+      }
+    } else if (event.key.toLowerCase() === "r") {
+      setAnnouncement(feedbackFor(session));
+    } else if (event.key === "Escape") {
+      // GAME-306: Esc dismisses the non-modal second-build card instead of
+      // opening pause — the card is never modal and never traps focus.
+      if (secondOffer) {
+        event.preventDefault();
+        declineSecondOffer(false);
+        return;
+      }
+      event.preventDefault();
+      togglePause();
+    }
+  }
+
+  function handleDrop(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setDraggingPieceId(null);
+    const pieceId = event.dataTransfer.getData("text/plain");
+    const piece = session.puzzle.tray.find((candidate) => candidate.id === pieceId);
+    if (piece) {
+      dispatchSequence([
+        { type: "selectPiece", pieceId: piece.id },
+        { type: "placePiece", pieceId: piece.id },
+      ]);
+    }
+  }
+
+  function handlePieceActivation(pieceId: string, event: ReactMouseEvent<HTMLButtonElement>) {
+    if (event.detail === 0) {
+      dispatchAction({ type: "selectPiece", pieceId });
+      return;
+    }
+    dispatchSequence([
+      { type: "selectPiece", pieceId },
+      { type: "placePiece", pieceId },
+    ]);
+  }
+
+  function beginRound() {
+    persistRelaxedChoice(undefined, relaxed);
+    setFirstSession(false);
+    setClock(createBridgeClock({ nowMs: performance.now() }));
+    setPaused(false);
+    setHasStarted(true);
+    setHoveredPieceId(null);
+    setDraggingPieceId(null);
+    setDeniedPulse(0);
+    setAnnouncement(questionText(session.puzzle, 1));
+  }
+
+  /**
+   * GAME-304: start a brand-new round. The untimed retry creates a fresh
+   * session (new sessionId + generation) on the same skill with no deadline —
+   * it never resumes or extends the expired clock.
+   */
+  function startRound(options: { untimed: boolean }) {
+    // GAME-305: the first-session untimed start opens with the nearly
+    // unfailable teaching round (UX §2 J1); every other start keeps the
+    // deterministic qualification slice.
+    const firstPuzzleOverride = firstSession && options.untimed ? TEACHING_PUZZLE : undefined;
+    const nextPuzzles = createQualificationRound(roundSeedRef.current++, {
+      firstPuzzle: firstPuzzleOverride,
+      previousPuzzle: session.puzzle,
+    });
+    persistRelaxedChoice(undefined, options.untimed);
+    setFirstSession(false);
+    const firstPuzzle = nextPuzzles[0] ?? CANDIDATE_PUZZLE;
+    const nextContext = {
+      sessionId: newSessionId(),
+      generation: intentContextRef.current.generation + 1,
+    };
+    intentContextRef.current = nextContext;
+    setIntentContext(nextContext);
+    intentSequenceRef.current = 0;
+    lastAcceptedSequenceRef.current = 0;
+    setRoundPuzzles(nextPuzzles);
+    setPuzzleCursor(0);
+    // GAME-306: a new round never inherits a previous offer card or timer.
+    if (secondOfferTimerRef.current !== null) {
+      window.clearTimeout(secondOfferTimerRef.current);
+      secondOfferTimerRef.current = null;
+    }
+    setSecondOffer(null);
+    setSession(createBridgeSession(firstPuzzle));
+    setClock(createBridgeClock({ nowMs: performance.now() }));
+    setPaused(false);
+    setHasStarted(true);
+    setRelaxed(options.untimed);
+    clearIntentIssue();
+    setRendererStatus("loading");
+    setHoveredPieceId(null);
+    setDraggingPieceId(null);
+    setDeniedPulse(0);
+    setAnnouncement(questionText(firstPuzzle, 1));
+  }
+
+  /** GAME-305: remember an explicit toggle and leave the first-session framing. */
+  function chooseRelaxed(value: boolean) {
+    persistRelaxedChoice(undefined, value);
+    setRelaxed(value);
+    setFirstSession(false);
+  }
+
+  /** First-session untimed-first primary CTA (learn default, no clock pressure). */
+  function startRelaxedFirstSession() {
+    setRelaxed(true);
+    startRound({ untimed: true });
+  }
+
+  function startUntimedRetry() {
+    startRound({ untimed: true });
+  }
+
+  function startTimedChallenge() {
+    startRound({ untimed: false });
+  }
+
+  const bridgeStyle = {
+    "--bb-span-width": `${Math.max(240, viewModel.span * viewModel.layout.unitPx)}px`,
+  } as CSSProperties;
+  const currentVehicleState = vehicleState(viewModel);
+  // GAME-302: soft overhang preview target — hover/focus wins, selection is the fallback.
+  const previewTargetId = hoveredPieceId ?? session.selectedPieceId;
+  const previewTarget = previewTargetId
+    ? availablePieces.find((piece) => piece.id === previewTargetId)
+    : undefined;
+  const showOverhangPreview =
+    Boolean(previewTarget?.oversized) &&
+    session.phase === "building" &&
+    !expired &&
+    viewModel.remainingSpan > 0;
+  const previewExcess = previewTarget?.excessUnits ?? viewModel.previewOversize?.excessUnits ?? viewModel.selectedOversize?.excessUnits ?? null;
+  const previewExcessPx =
+    previewExcess != null ? Math.max(28, previewExcess * viewModel.layout.unitPx) : 0;
+  const openSlotPreviewLabel = showOverhangPreview && previewTarget
+    ? `Place ${pieceLabel({ units: previewTarget.units, label: previewTarget.label })} — ${tooLongShortCopy(viewModel.remainingSpan, session.puzzle.denominator)}, would stick out by ${amountPhrase(previewExcess ?? 0, session.puzzle.denominator)}`
+    : selectedPiece
+      ? `Place ${pieceLabel(selectedPiece)} in the open span`
+      : "Open span; click a plank to add it";
+  const isDenied = session.lastOutcome?.status === "overhang";
+
+  return (
+    <div
+      className={`bb-candidate ${reducedMotion ? "bb-reduce-motion" : ""}`}
+      data-testid="bridge-builder-candidate"
+      data-verdict={viewModel.verdict ?? "building"}
+      data-responsive={viewModel.responsive}
+      data-paused={paused ? "true" : "false"}
+      onKeyDown={handleKeyDown}
+    >
+      {!hasStarted ? (
+        <section className="bb-candidate-setup" data-testid="bridge-setup" aria-labelledby="bridge-setup-title">
+          <p className="eyebrow">Before you start</p>
+          <h2 id="bridge-setup-title">Ready to build a bridge?</h2>
+          <p data-testid="setup-lead">
+            {firstSession
+              ? firstSessionLeadCopy()
+              : "Each solved bridge brings a fresh target and plank set. Build up to 6 bridges in 90 seconds — or practice with no timer."}
+          </p>
+          {/* GAME-305: Relaxed is the discoverable untimed path (free site
+              only — hidden inside the earned break, §1.1 containment). */}
+          {relaxedAvailable ? (
+            <>
+              <button
+                type="button"
+                data-testid="setup-relaxed"
+                aria-pressed={relaxed}
+                onClick={() => chooseRelaxed(!relaxed)}
+              >
+                {relaxed ? "Relaxed build on — no timer" : "Relaxed build — no timer"}
+              </button>
+              <p className="muted-label">
+                {relaxed
+                  ? "Relaxed is on: no clock, up to 6 bridges."
+                  : "Relaxed is off: 90 seconds or 6 bridges."}
+              </p>
+            </>
+          ) : null}
+          <fieldset className="bb-face-choice">
+            <legend>How should plank values appear?</legend>
+            <button
+              type="button"
+              data-testid="setup-numerals"
+              aria-pressed={numberFace === "numerals"}
+              onClick={() => setNumberFace("numerals")}
+            >
+              Numerals
+            </button>
+            <button
+              type="button"
+              data-testid="setup-dots"
+              aria-pressed={numberFace === "dots"}
+              onClick={() => setNumberFace("dots")}
+            >
+              Dots
+            </button>
+          </fieldset>
+          <p className="muted-label">Numbers are the default. Dots show each plank value visually.</p>
+          {firstSession && relaxedAvailable ? (
+            <>
+              {/* Untimed-first primary: a new player meets the loop without
+                  clock pressure. The timed challenge stays one tap away. */}
+              <button
+                type="button"
+                className="button primary"
+                data-testid="bridge-start-relaxed"
+                onClick={startRelaxedFirstSession}
+              >
+                Start with no timer
+              </button>
+              <p className="muted-label" data-testid="setup-timed-hint">
+                {firstSessionTimedCopy()}
+              </p>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className={firstSession && relaxedAvailable ? "button" : "button primary"}
+            data-testid="bridge-start"
+            onClick={beginRound}
+          >
+            Start building
+          </button>
+        </section>
+      ) : (
+        <>
+          <header className="bb-candidate-header">
+            <div>
+              <p className="eyebrow">Your bridge</p>
+              <h2>Build the bridge</h2>
+              <p
+                className="bb-candidate-lede"
+                data-testid="bridge-question"
+                data-puzzle-id={session.puzzle.id}
+                data-gap-units={session.puzzle.gapUnits}
+                aria-live="polite"
+              >
+                {questionText(session.puzzle, currentPuzzleIndex + 1)}
+              </p>
+            </div>
+            <div className="bb-candidate-settings" aria-label="Game settings">
+              <span className="bb-setting-label">Number style</span>
+              <button type="button" className="bb-small-button" onClick={() => setReducedMotion((value) => !value)}>
+                {reducedMotion ? "Motion off" : "Reduce motion"}
+              </button>
+              <button type="button" className="bb-small-button" onClick={() => setMuted((value) => !value)}>
+                {muted ? "Sound off" : "Mute sound"}
+              </button>
+              <button
+                type="button"
+                className="bb-small-button"
+                data-testid="toggle-face-mode"
+                onClick={() => setNumberFace((face) => face === "numerals" ? "dots" : "numerals")}
+              >
+                {numberFace === "numerals" ? "Use dots" : "Use numbers"}
+              </button>
+            </div>
+          </header>
+
+          <div className="bb-candidate-status" aria-label="Round status">
+            <span data-testid="bridge-progress">
+              Bridge {Math.min(currentPuzzleIndex + 1, clock.capBridges)} of {clock.capBridges}
+            </span>
+            {relaxed ? (
+              <span data-testid="bridge-clock" data-relaxed="true" className="timer-relaxed">
+                Relaxed — no timer
+              </span>
+            ) : (
+              <span data-testid="bridge-clock" data-relaxed="false" className={clock.remainingMs <= 10_000 ? "timer-low" : "timer"}>
+                {formatClockMs(clock.remainingMs)}
+              </span>
+            )}
+            <span>{formatPoints(session)}</span>
+            {relaxed ? null : (
+              <button type="button" className="link-button" onClick={togglePause}>
+                {paused ? "Resume" : "Pause"}
+              </button>
+            )}
+          </div>
+
+          {/* GAME-306: non-blocking inline second-construction offer (UX MAJ-22,
+              J1.6). Anchored beside the play surface, never modal, never a
+              gate: the next bridge stays playable while the card is visible
+              and the 5 s auto-dismiss is its lifetime. Copy names "another"
+              valid fill without implying one canonical answer. */}
+          {secondOffer && !roundComplete ? (
+            <section
+              className="bb-second-offer"
+              data-testid="second-build-offer"
+              data-puzzle-id={secondOffer.puzzle.id}
+              aria-label="Build it another way?"
+              role="status"
+            >
+              <div className="bb-second-offer-card">
+                <strong data-testid="second-build-offer-title">
+                  Build it another way? +{SECOND_BUILD_POINTS}
+                </strong>
+                <p className="microcopy" data-testid="second-build-offer-copy">
+                  Same gap — different planks can also fit. Any exact fit counts.
+                </p>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    type="button"
+                    className="button primary"
+                    data-testid="second-build-accept"
+                    onClick={acceptSecondOffer}
+                  >
+                    Try another way
+                  </button>
+                  <button
+                    type="button"
+                    className="button"
+                    data-testid="second-build-decline"
+                    onClick={() => declineSecondOffer(false)}
+                  >
+                    Nice — next bridge
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          <div className="bb-candidate-board">
+            <BridgeCanvas
+              key={intentContext.generation}
+              viewModel={viewModel}
+              paused={paused}
+              onResize={(width, height) => setCanvasSize((previous) =>
+                previous.width === width && previous.height === height ? previous : { width, height },
+              )}
+              createIntent={createIntent}
+              onIntent={dispatch}
+              onStatusChange={setRendererStatus}
+              onVersionSkew={(rendererVersion, viewModelVersion) => {
+                telemetryRef.current.emit("renderer_version_skew", {
+                  rendererVersion,
+                  viewModelVersion,
+                });
+                // GAME-297: player-friendly wording; technical versions stay in telemetry.
+                setIntentIssue("The picture needs a refresh — your bridge is safe in the list below.");
+              }}
+              onInvalidIntent={(reason) => rejectIntent(reason)}
+            />
+
+            <section
+              className="bb-candidate-mirror"
+              data-testid="bridge-dom-mirror"
+              data-verdict={viewModel.verdict ?? "building"}
+              data-crossing={viewModel.crossing ? "true" : "false"}
+              data-reduced-motion={reducedMotion ? "true" : "false"}
+              aria-labelledby="bridge-mirror-title"
+            >
+              <div className="bb-mirror-heading">
+                <div>
+                  <p className="eyebrow">Accessible bridge view</p>
+                  <h3 id="bridge-mirror-title">
+                    {session.puzzle.presetPlaced.length > 0 ? "Find the missing amount" : "Place the planks"}
+                  </h3>
+                </div>
+                <span className="bb-renderer-status" data-testid="renderer-status">
+                  {rendererStatus === "ready" ? "Canvas ready" : rendererStatus === "failed" ? "DOM view active" : "Canvas loading"}
+                </span>
+              </div>
+
+              <p className="bb-span-copy" data-testid="bridge-span-copy" aria-live="polite">
+                The gap needs <strong>{targetSpanLabel(session.puzzle)}</strong>. You have filled <strong>{viewModel.filledUnits}</strong>.
+                {viewModel.remainingSpan > 0
+                  ? ` ${remainingPhrase(viewModel.remainingSpan, session.puzzle.denominator)}.`
+                  : " The span is closed."}
+              </p>
+              <p className="bb-input-hint">Click a plank to add it. Dragging to the open span also works.</p>
+
+              <div
+                className={`bb-candidate-bridge ${viewModel.exact ? "is-exact" : ""} ${viewModel.overfill ? "is-over" : ""} ${showOverhangPreview ? "is-over-preview" : ""} ${isDenied ? "is-denied" : ""}`}
+                style={bridgeStyle}
+                data-state={viewModel.exact ? "exact" : viewModel.overfill ? "overfill" : "underfill"}
+                data-preview-overhang={showOverhangPreview ? "true" : "false"}
+                data-denied-pulse={deniedPulse}
+                role="group"
+                aria-label="Bridge span"
+              >
+                <span className="bb-candidate-bank bb-candidate-bank-left" aria-hidden="true" />
+                <span className="bb-candidate-bank bb-candidate-bank-right" aria-hidden="true" />
+                {/* GAME-297: state glyphs are decorative (aria-hidden); the
+                    live text + data-state carry semantics. Same vocabulary as
+                    Phaser: ◌ open · ✓ exact · ⚠ over. */}
+                <span className="bb-span-state-glyph" data-testid="bridge-state-glyph" aria-hidden="true">
+                  {viewModel.exact ? "✓" : viewModel.overfill || showOverhangPreview ? "⚠" : "◌"}
+                </span>
+                <span
+                  className={`bb-candidate-vehicle bb-vehicle-${currentVehicleState}`}
+                  data-testid="bridge-vehicle"
+                  data-state={currentVehicleState}
+                  aria-hidden="true"
+                >
+                  <img src={carSpriteUrl} alt="" />
+                </span>
+                {/* GAME-297: crossing payoff visuals. Static shapes in both
+                    motion modes (CSS kills the animation under reduced motion);
+                    audio payoff is the DOM sound cue with a mute guard. */}
+                {viewModel.exact ? (
+                  <span className="bb-celebration" data-testid="bridge-celebration" aria-hidden="true">
+                    <span className="bb-celebration-ring bb-celebration-ring-1" />
+                    <span className="bb-celebration-ring bb-celebration-ring-2" />
+                    <span className="bb-celebration-flag">✓</span>
+                  </span>
+                ) : null}
+                {viewModel.overfill ? (
+                  <span className="bb-splash" data-testid="bridge-splash" aria-hidden="true">
+                    <span className="bb-splash-ring bb-splash-ring-1" />
+                    <span className="bb-splash-ring bb-splash-ring-2" />
+                    <span className="bb-splash-ring bb-splash-ring-3" />
+                  </span>
+                ) : null}
+                {viewModel.placed.map((piece) => (
+                  <button
+                    key={piece.id}
+                    type="button"
+                    className="bb-candidate-placed"
+                    data-testid={`placed-${piece.id}`}
+                    aria-label={`Remove ${pieceLabel(piece)}`}
+                    disabled={expired || session.phase === "exact"}
+                    style={{ width: `${Math.max(56, Math.round(piece.widthPx))}px` } as CSSProperties}
+                    onClick={() => dispatchAction({ type: "removePiece", pieceId: piece.id })}
+                  >
+                    <PieceFace units={piece.units} label={String(piece.units)} mode={numberFace} />
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className={`bb-candidate-open-slot ${viewModel.overfill ? "is-over" : ""} ${viewModel.exact ? "is-exact" : ""} ${showOverhangPreview ? "is-over-preview" : ""} ${isDenied ? "is-denied" : ""}`}
+                  data-testid="bridge-open-slot"
+                  data-preview-overhang={showOverhangPreview ? "true" : "false"}
+                  data-denied-pulse={deniedPulse}
+                  aria-label={openSlotPreviewLabel}
+                  disabled={!viewModel.capabilities.canPlace}
+                  onClick={() => selectedPiece && dispatchAction({ type: "placePiece", pieceId: selectedPiece.id })}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={handleDrop}
+                >
+                  {viewModel.remainingSpan > 0 ? `${viewModel.remainingSpan} open` : "Closed ✓"}
+                </button>
+                {showOverhangPreview && previewTarget && previewExcess != null ? (
+                  <span
+                    className="bb-overhang-preview"
+                    data-testid="overhang-preview"
+                    data-piece-id={previewTarget.id}
+                    data-excess-units={previewExcess}
+                    style={{ width: `${previewExcessPx}px` } as CSSProperties}
+                    role="img"
+                    aria-label={`${previewTarget.label} would stick out by ${amountPhrase(previewExcess, session.puzzle.denominator)}`}
+                  >
+                    <span aria-hidden="true" className="bb-overhang-preview-glyph">⚠</span>
+                    <span className="bb-overhang-preview-text">
+                      Would stick out by {amountPhrase(previewExcess, session.puzzle.denominator)}
+                    </span>
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="bb-candidate-tray" role="group" aria-label="Piece tray">
+                {availablePieces.map((piece) => {
+                  const oversized = piece.oversized;
+                  const teachId = `too-long-${piece.id}`;
+                  const locked = expired || session.phase === "exact";
+                  const dragging = draggingPieceId === piece.id;
+                  // GAME-297: length-proportional bar (percent of longest tray
+                  // piece). Grid cells stay equal for touch targets; the wood
+                  // bar inside carries the proportional cue, matching Phaser.
+                  const longestTrayUnits = Math.max(1, ...availablePieces.map((candidate) => Math.abs(candidate.units)));
+                  const barPct = Math.max(18, Math.round((Math.abs(piece.units) / longestTrayUnits) * 100));
+                  return (
+                    <button
+                      key={piece.id}
+                      type="button"
+                      className={`bb-candidate-piece ${piece.selected ? "is-selected" : ""} ${piece.focused ? "is-focused" : ""} ${oversized ? "is-too-long" : ""} ${dragging ? "is-dragging" : ""} ${locked ? "is-disabled" : ""}`}
+                      data-testid={`piece-${piece.id}`}
+                      data-piece-id={piece.id}
+                      data-units={piece.units}
+                      data-face-mode={numberFace}
+                      data-oversized={oversized ? "true" : "false"}
+                      data-excess-units={piece.excessUnits ?? ""}
+                      data-dragging={dragging ? "true" : "false"}
+                      data-locked={locked ? "true" : "false"}
+                      draggable={!expired}
+                      disabled={expired}
+                      aria-disabled={oversized && !expired ? "true" : undefined}
+                      aria-describedby={oversized ? teachId : undefined}
+                      aria-label={
+                        oversized
+                          ? `${pieceLabel({ units: piece.units, label: piece.label })} — ${tooLongShortCopy(viewModel.remainingSpan, session.puzzle.denominator)}`
+                          : pieceLabel({ units: piece.units, label: piece.label })
+                      }
+                      aria-pressed={piece.selected}
+                      onClick={(event) => handlePieceActivation(piece.id, event)}
+                      onMouseEnter={() => setHoveredPieceId(piece.id)}
+                      onMouseLeave={() => setHoveredPieceId((current) => (current === piece.id ? null : current))}
+                      onFocus={() => setHoveredPieceId(piece.id)}
+                      onBlur={() => setHoveredPieceId((current) => (current === piece.id ? null : current))}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("text/plain", piece.id);
+                        setDraggingPieceId(piece.id);
+                      }}
+                      onDragEnd={() => setDraggingPieceId((current) => (current === piece.id ? null : current))}
+                    >
+                      <span className="bb-piece-grain" aria-hidden="true"></span>
+                      <span className="bb-piece-bar" aria-hidden="true" style={{ width: `${barPct}%` } as CSSProperties} />
+                      <PieceFace units={piece.units} label={piece.label} mode={numberFace} />
+                      {oversized ? (
+                        <span
+                          className="bb-too-long-hint"
+                          id={teachId}
+                          data-testid={teachId}
+                        >
+                          <span aria-hidden="true">⚠ </span>
+                          {tooLongShortCopy(viewModel.remainingSpan, session.puzzle.denominator)}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* GAME-303: sticky primary footer — Check it + live status stay
+                  on screen without page scroll. Plain div: no semantics,
+                  focus order, or touch-target change. */}
+              <div className="bb-candidate-footer" data-testid="bridge-footer">
+              <div className="bb-candidate-actions">
+                <button
+                  type="button"
+                  className="button primary"
+                  data-testid="bridge-submit"
+                  disabled={!viewModel.capabilities.canSubmit}
+                  onClick={() => dispatchAction({ type: "submit" })}
+                >
+                  Check it
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  data-testid="bridge-undo"
+                  disabled={!viewModel.capabilities.canRemove}
+                  onClick={() => {
+                    const piece = lastPlaced(session);
+                    if (piece) dispatchAction({ type: "removePiece", pieceId: piece.id });
+                  }}
+                >
+                  Undo
+                </button>
+                <button
+                  type="button"
+                  className="button"
+                  data-testid="bridge-reset"
+                  disabled={expired || session.phase === "exact" || session.phase === "awaitingContinue"}
+                  onClick={() => dispatchAction({ type: "reset" })}
+                >
+                  Reset
+                </button>
+                {session.phase === "incorrectSubmit" ? (
+                  <button type="button" className="button" data-testid="bridge-retry" onClick={() => dispatchAction({ type: "continue" })}>
+                    Try again
+                  </button>
+                ) : null}
+              </div>
+
+              {intentIssue ? (
+                <p className="bb-intent-retry" role="status" data-testid="intent-retry">
+                  {intentIssue}{" "}
+                  <button type="button" className="link-button" onClick={clearIntentIssue}>Tap again</button>
+                </p>
+              ) : null}
+
+              <p
+                key={`bridge-feedback-${deniedPulse}`}
+                className={`bb-candidate-feedback ${viewModel.exact ? "is-success" : viewModel.overfill || viewModel.incorrectSubmit ? "is-correction" : ""} ${isDenied ? "is-denied" : ""}`}
+                data-testid="bridge-feedback"
+                data-state={viewModel.exact ? "exact" : viewModel.overfill ? "overfill" : viewModel.underfill ? "underfill" : "building"}
+                data-denied-pulse={deniedPulse}
+                aria-live="polite"
+                role="status"
+              >
+                {announcement}
+              </p>
+              </div>
+            </section>
+          </div>
+
+          {paused ? (
+            <div className="bb-candidate-pause" role="dialog" aria-modal="true" aria-label="Game paused">
+              <div className="bb-candidate-pause-card">
+                <p className="eyebrow">Paused</p>
+                {/* GAME-297: honest pause copy — never implies extra time.
+                    With budget left the clock is stopped; at 0 the clock keeps
+                    running and pausing adds nothing. */}
+                <h3>Paused.</h3>
+                <p>
+                  {clock.pauseBudgetRemainingMs > 0
+                    ? "The clock is stopped while this is on screen."
+                    : "The clock keeps running while paused."}
+                </p>
+                <p className="muted-label">
+                  {clock.pauseBudgetRemainingMs > 0
+                    ? `Up to ${Math.ceil(clock.pauseBudgetRemainingMs / 1000)} seconds of pause left. Pausing never adds extra time.`
+                    : "Pause time is used up — pausing never adds extra time."}
+                </p>
+                <button type="button" className="button primary" onClick={togglePause}>Resume bridge</button>
+              </div>
+            </div>
+          ) : null}
+
+          {/* GAME-304: clock-ended notice is coaching + bridges closed, never
+              the bare administrative freeze line. */}
+          {clockEnded && session.phase !== "exact" ? (
+            <div className="bb-candidate-expired" role="status" data-testid="bridge-expired" ref={expiredNoticeRef}>
+              <strong>{timeoutHeadline()}</strong>
+              <span>{clockEndedReasonLine()}</span>
+            </div>
+          ) : null}
+
+          {roundComplete ? (
+            <section className="bb-candidate-summary" data-testid="bridge-summary" aria-labelledby="bridge-summary-title" ref={summaryRef}>
+              <p className="eyebrow">Round complete</p>
+              <h3 id="bridge-summary-title">
+                {clockEnded
+                  ? timeoutHeadline()
+                  : `You solved ${session.bridgesSolved} bridge${session.bridgesSolved === 1 ? "" : "s"}.`}
+              </h3>
+              <p data-testid="bridge-bridges-closed">{bridgesClosedLine(session.bridgesSolved)}</p>
+              {clockEnded ? <p>{clockEndedReasonLine()}</p> : null}
+              <p data-testid="bridge-coaching">{timeoutCoaching}</p>
+              <p>{formatPoints(session)} · {session.starsTotal} stars</p>
+              <p className="muted-label">Your progress stays on this device for this round.</p>
+              {/* GAME-304: primary CTA starts a NEW untimed same-skill round —
+                  it never extends the expired clock. Secondary returns to the
+                  timed challenge without guilt framing. */}
+              <button type="button" className="button primary" data-testid="bridge-retry-untimed" onClick={startUntimedRetry}>
+                {untimedRetryCtaLabel()}
+              </button>
+              <button type="button" className="button" data-testid="bridge-retry-timed" onClick={startTimedChallenge}>
+                {timedChallengeCtaLabel()}
+              </button>
+            </section>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}

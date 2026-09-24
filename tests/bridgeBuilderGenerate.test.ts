@@ -18,6 +18,41 @@ function puzzleFor(skillId: string, seed: number) {
   return generatePuzzle(skillId, rng, { index: seed, sessionX });
 }
 
+function exactUnitDecompositions(values: readonly number[], target: number): string[] {
+  const sorted = [...values].sort((a, b) => a - b);
+  const solutions = new Set<string>();
+  const visit = (start: number, remaining: number, used: number[]) => {
+    if (remaining === 0) {
+      solutions.add(used.join(","));
+      return;
+    }
+    for (let index = start; index < sorted.length; index += 1) {
+      if (index > start && sorted[index] === sorted[index - 1]) continue;
+      const value = sorted[index]!;
+      if (value > remaining && !sorted.some((candidate) => candidate < 0)) break;
+      visit(index + 1, remaining - value, [...used, value]);
+    }
+  };
+  visit(0, target, []);
+  return [...solutions].sort();
+}
+
+function puzzleFingerprint(puzzle: ReturnType<typeof puzzleFor>): string {
+  return JSON.stringify({
+    skillId: puzzle.skillId,
+    band: puzzle.band,
+    denominator: puzzle.denominator,
+    gapUnits: puzzle.gapUnits,
+    presetUnits: puzzle.presetPlaced.map((piece) => piece.units),
+    // Tray order is visible to the learner and is part of a distinct generated instance.
+    tray: puzzle.tray.map((piece) => [piece.units, piece.kind]),
+    legs: puzzle.legs ?? null,
+    groupSize: puzzle.groupSize ?? null,
+    scaleNote: puzzle.scaleNote ?? null,
+    hasEquivalenceRelation: puzzle.hasEquivalenceRelation,
+  });
+}
+
 describe("skill catalog", () => {
   it("covers all 14 planned skills with CCSS tags", () => {
     expect(SKILL_DEFINITIONS).toHaveLength(14);
@@ -50,6 +85,22 @@ describe("generatePuzzle invariants (property)", () => {
         expect(
           puzzle.gapUnits * puzzle.denominator
         ).toBeLessThan(2 ** 31);
+
+        const largestPlank = Math.max(...skill.genPolicy.pieceValues);
+        for (const decoy of puzzle.tray.filter((piece) => piece.isDecoy)) {
+          const remaining = puzzle.tray
+            .filter((piece) => piece.id !== decoy.id)
+            .map((piece) => piece.units)
+            .sort((a, b) => a - b);
+          const keepsSolvable =
+            countSubsetSolutions(remaining, need - decoy.units) > 0;
+          const honestOverfill =
+            decoy.units > need && decoy.units - need > largestPlank;
+          expect(
+            keepsSolvable || honestOverfill,
+            `${skill.id} seed ${seed}: decoy ${decoy.units} must preserve an exact unit solution or visibly overfill by more than ${largestPlank}`,
+          ).toBe(true);
+        }
       }
     });
 
@@ -60,6 +111,53 @@ describe("generatePuzzle invariants (property)", () => {
       }
       expect(puzzle.gapLabel.length).toBeGreaterThan(0);
     });
+  }
+});
+
+describe("GAME-295 proposed content-supply coverage", () => {
+  const tiers = [
+    { name: "baseline", difficulty: undefined },
+    { name: "easier", difficulty: "easier" as const },
+    { name: "harder", difficulty: "harder" as const },
+  ];
+
+  for (const [skillIndex, skill] of SKILL_DEFINITIONS.entries()) {
+    for (const tier of tiers) {
+      it(`finds 12 distinct solvable ${tier.name} puzzles for ${skill.id}`, () => {
+        const sessionX = createSessionX(skill.id, mulberry32(90_000 + skillIndex));
+        const fingerprints = new Set<string>();
+        const witnesses: ReturnType<typeof puzzleFor>[] = [];
+
+        for (let seed = 1; seed <= 256 && fingerprints.size < 12; seed += 1) {
+          const puzzle = generatePuzzle(skill.id, mulberry32(seed + skillIndex * 10_007), {
+            index: seed,
+            sessionX,
+            difficulty: tier.difficulty,
+          });
+          const fingerprint = puzzleFingerprint(puzzle);
+          if (!fingerprints.has(fingerprint)) {
+            fingerprints.add(fingerprint);
+            witnesses.push(puzzle);
+          }
+        }
+
+        expect(
+          fingerprints.size,
+          `${skill.id}/${tier.name}: reproducible seeds 1..256 should yield 12 visible unit-state variants`,
+        ).toBeGreaterThanOrEqual(12);
+
+        for (const puzzle of witnesses) {
+          const need = puzzle.gapUnits - puzzle.presetPlaced.reduce((sum, piece) => sum + piece.units, 0);
+          const units = puzzle.tray.map((piece) => piece.units).sort((a, b) => a - b);
+          const decompositions = exactUnitDecompositions(units, need);
+          expect(decompositions.length).toBeGreaterThanOrEqual(1);
+          expect(puzzle.solutionCount).toBe(decompositions.length);
+          if (puzzle.supportsSecondConstruction) {
+            expect(new Set(decompositions).size).toBeGreaterThanOrEqual(2);
+          }
+        }
+      });
+    }
   }
 });
 

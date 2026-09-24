@@ -19,7 +19,7 @@ import {
   createBridgeSession,
   type BridgeSessionState,
 } from "@/lib/bridgeBuilder/session";
-import type { BridgeIntent } from "@/lib/bridgeBuilder/intents";
+import type { BridgeIntentAction } from "@/lib/bridgeBuilder/intents";
 import { createBridgeLayout, withResize } from "@/lib/bridgeBuilder/layout";
 import { deriveBridgeSemanticState } from "@/lib/bridgeBuilder/semantic";
 import { deriveBridgeViewModel } from "@/lib/bridgeBuilder/viewModel";
@@ -102,7 +102,7 @@ export default function BridgeBuilderPhaserHost({
     [session, viewModel]
   );
 
-  function dispatch(intent: BridgeIntent) {
+  function dispatch(intent: BridgeIntentAction) {
     setSession((prev) => applyBridgeIntent(prev, intent).state);
   }
 
@@ -112,7 +112,7 @@ export default function BridgeBuilderPhaserHost({
     for (const intent of result.intents) dispatch(intent);
   }
 
-  function handleDirect(source: BridgeDirectInputSource, intent: BridgeIntent) {
+  function handleDirect(source: BridgeDirectInputSource, intent: BridgeIntentAction) {
     applyNormalized(
       normalizeDirectInput(inputRef.current, {
         source,
@@ -353,12 +353,19 @@ export default function BridgeBuilderPhaserHost({
               key={piece.id}
               type="button"
               aria-pressed={session.selectedPieceId === piece.id}
-              onClick={(event) =>
-                handleDirect(activationSource(event), {
+              onClick={(event) => {
+                const source = activationSource(event);
+                handleDirect(source, {
                   type: "selectPiece",
                   pieceId: piece.id,
-                })
-              }
+                });
+                if (source === "tap") {
+                  handleDirect(source, {
+                    type: "placePiece",
+                    pieceId: piece.id,
+                  });
+                }
+              }}
             >
               {piece.label} ({piece.units} units)
             </button>

@@ -91,6 +91,14 @@ describe("GAME-131 Phaser harness reconciliation", () => {
     expect(vm.filledUnits).toBe(10);
 
     const destroyed: string[] = [];
+    const labels: Array<{
+      x: number;
+      y: number;
+      text: string;
+      originX: number;
+      originY: number;
+      style?: Record<string, unknown>;
+    }> = [];
     const controller = new BridgeSceneController({
       emitPointerEvent: () => {},
       getInputGeneration: () => input.inputGeneration,
@@ -130,23 +138,42 @@ describe("GAME-131 Phaser harness reconciliation", () => {
             destroyed.push("rect");
           },
         }),
-        text: () => ({
-          setText() {
-            return this;
-          },
-          setPosition() {
-            return this;
-          },
-          destroy() {
-            destroyed.push("text");
-          },
-        }),
+        text: (x: number, y: number, text: string, style?: Record<string, unknown>) => {
+          const label = { x, y, text, originX: 0, originY: 0, style };
+          labels.push(label);
+          return {
+            setText(value: string) {
+              label.text = value;
+              return this;
+            },
+            setPosition(nx: number, ny: number) {
+              label.x = nx;
+              label.y = ny;
+              return this;
+            },
+            setOrigin(originX: number, originY: number) {
+              label.originX = originX;
+              label.originY = originY;
+              return this;
+            },
+            destroy() {
+              destroyed.push("text");
+            },
+          };
+        },
       },
       input: { on() {}, off() {} },
       cameras: { main: { setBackgroundColor() {} } },
       scale: { width: 640, height: 360 },
     } as never);
     controller.reconcile(vm);
+    expect(labels.slice(0, 3).map((label) => label.x)).toEqual([320, 320, 320]);
+    expect(labels.slice(0, 3).every((label) => label.originX === 0.5 && label.originY === 0)).toBe(true);
+    expect(labels.slice(3).every((label) => label.originX === 0.5 && label.originY === 0.5)).toBe(true);
+    expect(labels.map((label) => label.text)).toContain("Target span: 10");
+    expect(labels.map((label) => label.text)).toContain("4");
+    expect(labels.map((label) => label.text)).not.toContain("4-unit plank");
+    expect(controller.getInteractionGeometry().tray.every((piece) => piece.hitHeight >= 48)).toBe(true);
     controller.destroy();
     expect(destroyed.length).toBeGreaterThan(0);
   });

@@ -72,6 +72,9 @@ function mockPhaserModule(): PhaserModuleLike {
         setPosition() {
           return this;
         },
+        setOrigin() {
+          return this;
+        },
         destroy() {},
       }),
     };
@@ -178,6 +181,9 @@ describe("GAME-131 Phaser lifecycle", () => {
           setPosition() {
             return this;
           },
+          setOrigin() {
+            return this;
+          },
           destroy() {},
         }),
       },
@@ -213,6 +219,7 @@ describe("GAME-131 Phaser lifecycle", () => {
       resizeBridgeGame(
         {
           game: null,
+          ready: Promise.resolve(),
           controller: new BridgeSceneController({
             emitPointerEvent: () => {},
             getInputGeneration: () => 1,

@@ -1,4 +1,3 @@
-import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import App from "./App";
@@ -11,8 +10,7 @@ if (!rootElement) {
   throw new Error("Bridge Builder root element was not found.");
 }
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// The candidate owns one real Phaser instance. Avoid development-only
+// double-mounting so the qualification canvas is not duplicated while the
+// asynchronous renderer is booting.
+createRoot(rootElement).render(<App />);

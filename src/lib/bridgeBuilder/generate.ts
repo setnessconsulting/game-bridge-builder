@@ -15,6 +15,8 @@ export interface GenerateOptions {
 interface Candidate {
   gapUnits: number;
   trayValues: number[];
+  /** Values generated as distractors; used only for content qualification. */
+  decoyValues: number[];
   presetPlacedUnits: number;
   legs?: { a: string; b: string };
   sessionX?: number;
@@ -29,15 +31,15 @@ interface AdjustedPolicy {
 
 function ensureTraySize(candidate: Candidate): Candidate {
   const trayValues = [...candidate.trayValues];
+  const decoyValues = [...candidate.decoyValues];
   let filler = 0;
   while (trayValues.length < 5) {
-    // A filler larger than the target cannot be part of a positive exact-fit
-    // solution. Keep it four units clear so it cannot pair with a signed
-    // shim to become an accidental solution either.
-    trayValues.push(candidate.gapUnits + 4 + filler);
+    const value = candidate.gapUnits + 4 + filler;
+    trayValues.push(value);
+    decoyValues.push(value);
     filler += 1;
   }
-  return { ...candidate, trayValues };
+  return { ...candidate, trayValues, decoyValues };
 }
 
 function classifyPiece(units: number, sessionX: number | null): Piece["kind"] {
@@ -53,15 +55,21 @@ function classifyPiece(units: number, sessionX: number | null): Piece["kind"] {
 function labelPieces(
   values: readonly number[],
   skill: SkillDefinition,
-  sessionX: number | null
+  sessionX: number | null,
+  decoyValues: readonly number[] = [],
 ): Piece[] {
+  const decoyCounts = new Map<number, number>();
+  for (const value of decoyValues) decoyCounts.set(value, (decoyCounts.get(value) ?? 0) + 1);
   return values.map((units, i) => {
     const kind = classifyPiece(units, sessionX);
+    const decoyCount = decoyCounts.get(units) ?? 0;
+    if (decoyCount > 0) decoyCounts.set(units, decoyCount - 1);
     return {
       id: `${skill.id}#${i}:${units}`,
       units,
       label: formatPieceLabel(kind, units, skill.genPolicy.denominator),
       kind,
+      ...(decoyCount > 0 ? { isDecoy: true } : {}),
     };
   });
 }
@@ -97,7 +105,7 @@ function addDecoys(
   parts: number[],
   policy: SkillDefinition["genPolicy"],
   referenceGap: number
-): number[] {
+): { trayValues: number[]; decoyValues: number[] } {
   const decoys: number[] = [];
   const largest = Math.max(...policy.pieceValues);
   for (let i = 0; i < policy.decoys; i += 1) {
@@ -107,7 +115,7 @@ function addDecoys(
       decoys.push(pickFrom(rng, policy.pieceValues));
     }
   }
-  return [...parts, ...decoys];
+  return { trayValues: [...parts, ...decoys], decoyValues: decoys };
 }
 
 function buildCompose(rng: () => number, skill: SkillDefinition): Candidate {
@@ -122,9 +130,10 @@ function buildCompose(rng: () => number, skill: SkillDefinition): Candidate {
   );
   const targetParts = pickInt(rng, policy.parPieces[0], maxParts);
   const parts = samplePartition(rng, gapUnits, targetParts, policy.pieceValues);
+  const inventory = addDecoys(rng, parts, policy, gapUnits);
   return {
     gapUnits,
-    trayValues: addDecoys(rng, parts, policy, gapUnits),
+    ...inventory,
     presetPlacedUnits: 0,
   };
 }
@@ -138,9 +147,10 @@ function buildMissingAddend(rng: () => number, skill: SkillDefinition): Candidat
     need <= Math.min(...policy.pieceValues) || rng() < 0.4
       ? [need]
       : samplePartition(rng, need, 2, policy.pieceValues);
+  const inventory = addDecoys(rng, parts, policy, need);
   return {
     gapUnits,
-    trayValues: addDecoys(rng, parts, policy, need),
+    ...inventory,
     presetPlacedUnits: preset,
   };
 }
@@ -164,12 +174,21 @@ function buildFactorPairs(rng: () => number, skill: SkillDefinition): Candidate 
     parts = samplePartition(rng, product, pickInt(rng, 2, 3), policy.pieceValues);
   }
   const otherDivisorDecoys = divisors.filter((v) => !parts.includes(v)).slice(0, 2);
+  const additionalDecoys = addDecoys(rng, [], policy, product).decoyValues.slice(
+    0,
+    Math.max(0, policy.decoys - otherDivisorDecoys.length),
+  );
   const trayValues = shuffled(rng, [
     ...parts,
     ...otherDivisorDecoys,
-    ...addDecoys(rng, [], policy, product).slice(0, Math.max(0, policy.decoys - otherDivisorDecoys.length)),
+    ...additionalDecoys,
   ]);
-  return { gapUnits, trayValues, presetPlacedUnits: 0 };
+  return {
+    gapUnits,
+    trayValues,
+    decoyValues: [...otherDivisorDecoys, ...additionalDecoys],
+    presetPlacedUnits: 0,
+  };
 }
 
 function buildMultGroups(rng: () => number, skill: SkillDefinition): Candidate {
@@ -177,9 +196,10 @@ function buildMultGroups(rng: () => number, skill: SkillDefinition): Candidate {
   const k = pickInt(rng, 3, 5);
   const gapUnits = v * k;
   const groups = Array.from({ length: k }, () => v);
+  const inventory = addDecoys(rng, groups, skill.genPolicy, gapUnits);
   return {
     gapUnits,
-    trayValues: addDecoys(rng, groups, skill.genPolicy, gapUnits),
+    ...inventory,
     presetPlacedUnits: 0,
     groupSize: v,
   };
@@ -199,6 +219,7 @@ function buildFractionEquiv(rng: () => number): Candidate {
   return {
     gapUnits: 8,
     trayValues: shuffled(rng, [...parts, ...decoys]),
+    decoyValues: decoys,
     presetPlacedUnits: 0,
   };
 }
@@ -216,12 +237,19 @@ function buildLinearEq(rng: () => number, skill: SkillDefinition, sessionX: numb
   const gapUnits = k * x + c1;
   const strutParts = samplePartition(rng, c1, pickInt(rng, 1, 2), struts);
   const beams = Array.from({ length: k }, () => x);
+  const decoyValues = struts.filter((v) => v <= Math.max(c1, 6)).slice(0, 2);
   const trayValues = shuffled(rng, [
     ...beams,
     ...strutParts,
-    ...struts.filter((v) => v <= Math.max(c1, 6)).slice(0, 2),
+    ...decoyValues,
   ]);
-  return { gapUnits, trayValues, presetPlacedUnits: 0, sessionX: x };
+  return {
+    gapUnits,
+    trayValues,
+    decoyValues,
+    presetPlacedUnits: 0,
+    sessionX: x,
+  };
 }
 
 function buildRationalEq(rng: () => number, skill: SkillDefinition): Candidate {
@@ -234,13 +262,19 @@ function buildRationalEq(rng: () => number, skill: SkillDefinition): Candidate {
   // intentionally overshoot by exactly the available shim amount, while the
   // positive partition remains a clean solution.
   const overshootWitness = gapUnits + shimMagnitude;
+  const extraDecoys = addDecoys(rng, [], policy, gapUnits).decoyValues;
   const trayValues = shuffled(rng, [
     ...parts,
     overshootWitness,
     shim,
-    ...addDecoys(rng, [], policy, gapUnits),
+    ...extraDecoys,
   ]);
-  return { gapUnits, trayValues, presetPlacedUnits: 0 };
+  return {
+    gapUnits,
+    trayValues,
+    decoyValues: extraDecoys,
+    presetPlacedUnits: 0,
+  };
 }
 
 const PYTHAGOREAN_TRIPLES: ReadonlyArray<readonly [number, number, number]> = [
@@ -253,18 +287,56 @@ const PYTHAGOREAN_TRIPLES: ReadonlyArray<readonly [number, number, number]> = [
 
 function buildPythagorean(rng: () => number, skill: SkillDefinition): Candidate {
   const [a, b, c] = pickFrom(rng, PYTHAGOREAN_TRIPLES);
-  const composeTwo = c > 6 && rng() < 0.5;
-  const smaller = Math.min(a, b);
-  const parts = composeTwo ? [smaller, c - smaller] : [c];
+  const partCount = pickInt(rng, skill.genPolicy.parPieces[0], skill.genPolicy.parPieces[1]);
+  const parts = samplePartition(rng, c, partCount, skill.genPolicy.pieceValues);
   const nearMisses = [c + 1, b, a].filter((v) => v > 0 && !parts.includes(v));
   const decoyCount = Math.min(skill.genPolicy.decoys, nearMisses.length);
   const decoys = shuffled(rng, nearMisses).slice(0, decoyCount);
   return {
     gapUnits: c,
     trayValues: shuffled(rng, [...parts, ...decoys]),
+    decoyValues: decoys,
     presetPlacedUnits: 0,
     legs: { a: String(a), b: String(b) },
   };
+}
+
+function makeDecoysHonest(candidate: Candidate, skill: SkillDefinition): Candidate {
+  const target = candidate.gapUnits - candidate.presetPlacedUnits;
+  const maxPlank = Math.max(...skill.genPolicy.pieceValues);
+  const trayValues = [...candidate.trayValues];
+  const markedIndices = new Set<number>();
+  const decoyIndices = candidate.decoyValues.map((decoyValue) => {
+    const index = trayValues.findIndex(
+      (value, candidateIndex) => value === decoyValue && !markedIndices.has(candidateIndex),
+    );
+    if (index < 0) throw new Error(`Generator lost a decoy for ${skill.id}`);
+    markedIndices.add(index);
+    return { index, value: decoyValue };
+  });
+
+  for (const decoy of decoyIndices) {
+    const remainingValues = trayValues.filter((_, index) => index !== decoy.index);
+    const canCompleteExactly = countSubsetSolutions(
+      sortedValues(remainingValues),
+      target - decoy.value,
+    ) > 0;
+    const conspicuouslyOversized =
+      decoy.value > target && decoy.value - target > maxPlank;
+    if (!canCompleteExactly && !conspicuouslyOversized) {
+      // A near-miss that cannot lead to an exact construction is misleading.
+      // Replace it with a unit value from a separate exact witness in the
+      // remaining tray, making the selected piece itself part of that route.
+      const remainingWitness = findSubset(sortedValues(remainingValues), target);
+      const replacement = remainingWitness?.[0];
+      if (replacement !== undefined) {
+        trayValues[decoy.index] = replacement;
+        decoy.value = replacement;
+      }
+    }
+  }
+
+  return { ...candidate, trayValues, decoyValues: decoyIndices.map(({ value }) => value) };
 }
 
 function buildCandidate(
@@ -322,7 +394,7 @@ export function generatePuzzle(
   for (let attempt = 0; attempt < 80; attempt += 1) {
     const rawCandidate = buildCandidate(rng, skill, requestedX);
     if (!rawCandidate) continue;
-    const candidate = ensureTraySize(rawCandidate);
+    const candidate = makeDecoysHonest(ensureTraySize(rawCandidate), skill);
     if (
       candidate.gapUnits < adjusted.gapMin ||
       candidate.gapUnits > adjusted.gapMax
@@ -344,7 +416,10 @@ export function generatePuzzle(
   const sessionX = skill.id === "bb-linear-eq" ? candidate.sessionX ?? requestedX : null;
   const need = candidate.gapUnits - candidate.presetPlacedUnits;
   const solutions = countSubsetSolutions(sortedValues(candidate.trayValues), need);
-  const trayPieces = shuffled(rng, labelPieces(candidate.trayValues, skill, sessionX));
+  const trayPieces = shuffled(
+    rng,
+    labelPieces(candidate.trayValues, skill, sessionX, candidate.decoyValues),
+  );
   const presetPieces: Piece[] = candidate.presetPlacedUnits
     ? [
         {

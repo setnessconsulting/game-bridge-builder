@@ -12,7 +12,7 @@ import {
   createBridgeSession,
   filledUnitsOf,
 } from "@/lib/bridgeBuilder/session";
-import type { BridgeIntent } from "@/lib/bridgeBuilder/intents";
+import type { BridgeIntentAction } from "@/lib/bridgeBuilder/intents";
 import type { BridgePuzzle } from "@/lib/bridgeBuilder/types";
 import { deriveBridgeViewModel } from "@/lib/bridgeBuilder/viewModel";
 
@@ -37,7 +37,7 @@ const puzzle: BridgePuzzle = {
   hasEquivalenceRelation: false,
 };
 
-function applyAll(intents: BridgeIntent[]) {
+function applyAll(intents: BridgeIntentAction[]) {
   let state = createBridgeSession(puzzle);
   for (const intent of intents) {
     state = applyBridgeIntent(state, intent).state;
@@ -45,9 +45,9 @@ function applyAll(intents: BridgeIntent[]) {
   return state;
 }
 
-function directPlacement(source: BridgeDirectInputSource): BridgeIntent[] {
+function directPlacement(source: BridgeDirectInputSource): BridgeIntentAction[] {
   let normalizer = createInputNormalizerState();
-  const intents: BridgeIntent[] = [];
+  const intents: BridgeIntentAction[] = [];
   let result = normalizeDirectInput(normalizer, {
     source,
     intent: { type: "selectPiece", pieceId: "a" },
@@ -62,9 +62,9 @@ function directPlacement(source: BridgeDirectInputSource): BridgeIntent[] {
   return intents;
 }
 
-function dragPlacement(): BridgeIntent[] {
+function dragPlacement(): BridgeIntentAction[] {
   let normalizer = createInputNormalizerState(null, 1);
-  const intents: BridgeIntent[] = [];
+  const intents: BridgeIntentAction[] = [];
   for (const event of [
     {
       phase: "down" as const,

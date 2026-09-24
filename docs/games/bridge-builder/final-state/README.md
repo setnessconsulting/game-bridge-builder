@@ -5,9 +5,12 @@ This directory is the **specification of record** for the final production state
 (*Bridge Builder — final production state: Phaser 4 renderer, full game quality and release*), whose
 description carries the binding laws, constants, IDs and gates.
 
-**Status:** proposal pending owner ratification of the open decisions listed in `DECISIONS.md` §6
-(O-1…O-8). Requirements are adopted; the two bounded new issues (`BB-CONTRACT-1`, `BB-CONTENT-1`)
-await the O-8 sanction. Nothing here is implemented game code.
+**Status:** owner decisions O-1…O-8 were recorded and approved on 2026-09-17. Requirements are adopted;
+implementation, human evidence, criterion-level conformance sign-off, rollback, and release promotion remain
+open. O-7 executor names/dates and O-8 follow-up implementation remain required. The two bounded follow-ups
+are sanctioned and tracked as **GAME-294 / BB-CONTRACT-1** and **GAME-295 / BB-CONTENT-1**; both remain
+implementation and evidence work, not completed qualification. Nothing in this specification is itself
+implementation evidence.
 
 ## Documents
 
@@ -52,8 +55,9 @@ claim is asserted per success criterion with two recorded exceptions rather than
   and the current-generation evidence ledger, including the nine-criterion Railway Hero record (current-generation only;
   never cited as next-generation evidence).
 
-## Owner decisions this set raises
+## Owner decisions recorded and remaining gates
 
-See `DECISIONS.md` §6 and the epic description. The blocking one is **O-7**: without named owners and target dates for
-the four human gates and the WCAG conformance signer, Gates D and E cannot close and GAME-105 cannot reach Done
-regardless of engineering quality.
+See `DECISIONS.md` §6 and the epic description. O-1 through O-8 are approved policy decisions; they do not
+assert implementation or release readiness. **O-7 remains the closure blocker:** without named owners and target
+dates for the four human gates and the WCAG conformance signer, Gates D and E cannot close and GAME-105 cannot
+reach Done regardless of engineering quality. Authored-only documents and assignments are not passed evidence.

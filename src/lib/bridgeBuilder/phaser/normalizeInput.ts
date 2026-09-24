@@ -4,7 +4,7 @@
  * whether the intent is legal or mathematically correct.
  */
 
-import type { BridgeIntent } from "../intents";
+import type { BridgeIntentAction } from "../intents";
 
 export type PointerPhase = "down" | "move" | "up" | "cancel";
 export type BridgeDirectInputSource = "tap" | "keyboard";
@@ -21,7 +21,7 @@ export interface BridgePointerEvent {
 
 export interface BridgeDirectInput {
   source: BridgeDirectInputSource;
-  intent: BridgeIntent;
+  intent: BridgeIntentAction;
 }
 
 export interface InputNormalizerState {
@@ -33,7 +33,7 @@ export interface InputNormalizerState {
 
 export interface NormalizeResult {
   state: InputNormalizerState;
-  intents: BridgeIntent[];
+  intents: BridgeIntentAction[];
 }
 
 export function createInputNormalizerState(
@@ -122,7 +122,7 @@ export function normalizePointerEvent(
     if (!event.targetPieceId) {
       return { state, intents: [] };
     }
-    const intents: BridgeIntent[] = [];
+    const intents: BridgeIntentAction[] = [];
     let selectedPieceId = state.selectedPieceId;
     if (event.targetPieceId !== state.selectedPieceId) {
       selectedPieceId = event.targetPieceId;
@@ -175,9 +175,14 @@ export function normalizePointerEvent(
     };
   }
 
-  // Tap-select without drag and without gap: keep selection only.
+  // A direct tap on a tray piece is the click-to-place path. Dragging still
+  // uses the gap as its drop target, while keyboard activation can retain the
+  // explicit select-then-place flow in the accessible mirror.
   if (!wasDrag && event.targetPieceId === pieceId) {
-    return { state: { ...next, selectedPieceId: pieceId }, intents: [] };
+    return {
+      state: { ...next, selectedPieceId: null },
+      intents: [{ type: "placePiece", pieceId }],
+    };
   }
 
   return { state: next, intents: [] };

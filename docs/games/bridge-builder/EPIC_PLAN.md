@@ -2,7 +2,7 @@
 
 **Epic summary:** Ship Bridge Builder — a grades 1–8 construction game where kids compose labeled pieces to fill a structural gap exactly — as a free-site game and the first earned-break break-game, on a shared engine architecture that separates skill definition, problem generation, AI-tutor hints, and the learner model.
 
-**Curriculum coverage statement:** The skill map spans Common Core domains across all eight grades: operations & algebraic thinking (1.OA.C.6/D.8, 2.OA.B.2, 3.OA.A.1/A.4/C.7, 4.OA.A.4), number & operations in base ten / fractions (2.NBT.B.5, 4.NF.A.1/B.3/C.5-6, 5.NBT.B.7, 5.NF.A.1), ratios & proportional reasoning (6.RP.A.3), expressions & equations (6.EE.B.5/6, 7.EE.B.4, 8.EE.C.7), number system (7.NS.A.1d), and geometry (3.MD.D.8 conditional, 8.G.B.7). Every band's puzzles require that band's target reasoning; difficulty scales off the placement-assessment level signal, never manual pickers alone.
+**Curriculum coverage statement:** The current 14-skill, grades 1–8 catalogue is maintained in [`final-state/CURRICULUM_CATALOGUE.md`](final-state/CURRICULUM_CATALOGUE.md) and parity-tested against `src/lib/bridgeBuilder/skills.ts`. The broader standards roll-up in this original planning draft is superseded and is not a current source of truth. Every band's puzzles require that band's target reasoning; difficulty scales off the placement-assessment level signal, never manual pickers alone.
 
 **Phase artifacts:**
 - Requirements + red-team synthesis: [`REQUIREMENTS.md`](REQUIREMENTS.md)

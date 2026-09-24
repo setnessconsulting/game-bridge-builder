@@ -4,11 +4,19 @@
  */
 
 import type { BridgeViewModel } from "../viewModel";
-import { BridgeSceneController, BRIDGE_SCENE_KEY, type BridgeSceneHost } from "./BridgeScene";
+import carSpriteUrl from "@/assets/bridge-builder/car-sprite.png";
+import {
+  BridgeSceneController,
+  BRIDGE_CAR_TEXTURE_KEY,
+  BRIDGE_SCENE_KEY,
+  type BridgeSceneHost,
+} from "./BridgeScene";
 
 export interface BridgeGameHandle {
   game: { destroy: (removeCanvas?: boolean) => void } | null;
   controller: BridgeSceneController;
+  /** Resolves only after the real Phaser scene has created and attached. */
+  ready: Promise<void>;
   destroy: () => void;
   reconcile: (vm: BridgeViewModel) => void;
   pause: () => void;
@@ -20,6 +28,10 @@ export interface CreateBridgeGameOptions {
   width: number;
   height: number;
   host: BridgeSceneHost;
+  /** Optional override for deterministic renderer fixtures. */
+  carTextureUrl?: string;
+  /** Logical canvas resolution multiplier; defaults to the display DPR. */
+  resolution?: number;
   /** Injected Phaser module for tests; production passes dynamic import. */
   PhaserModule?: PhaserModuleLike;
 }
@@ -54,22 +66,89 @@ export async function createBridgeGame(
   const controller = new BridgeSceneController(options.host);
   let destroyed = false;
   let game: BridgeGameHandle["game"] = null;
+  let resolveReady!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    resolveReady = resolve;
+  });
 
   const PhaserModule =
     options.PhaserModule ??
     ((await import("phaser")) as unknown as PhaserModuleLike);
 
-  // The hosted production scene must be a genuine Phaser.Scene so the same
-  // scene lifecycle and renderer plumbing exercised in-browser are used here.
-  class HostedBridgeScene extends PhaserModule.Scene {
+  // A real Phaser.Scene subclass is required by the browser runtime. The
+  // controller still knows only the narrow scene surface above, so the engine
+  // graph remains Phaser-free and the renderer cannot become authority.
+  const SceneBase = PhaserModule.Scene as unknown as new (
+    config?: string | Record<string, unknown>,
+  ) => object;
+  class HostedBridgeScene extends SceneBase {
     static KEY = BRIDGE_SCENE_KEY;
+    add!: {
+      rectangle: (
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        color: number,
+        alpha?: number
+      ) => {
+        setPosition: (x: number, y: number) => unknown;
+        setDisplaySize: (w: number, h: number) => unknown;
+        setFillStyle: (color: number, alpha?: number) => unknown;
+        setData: (key: string, value: unknown) => unknown;
+        getData: (key: string) => unknown;
+        setInteractive: () => unknown;
+        destroy: () => void;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      };
+      text: (
+        x: number,
+        y: number,
+        text: string,
+        style?: Record<string, unknown>
+      ) => {
+        setText: (value: string) => unknown;
+        setPosition: (x: number, y: number) => unknown;
+        destroy: () => void;
+      };
+      image: (
+        x: number,
+        y: number,
+        key: string,
+      ) => {
+        setPosition: (x: number, y: number) => unknown;
+        setDisplaySize: (w: number, h: number) => unknown;
+        setOrigin: (x: number, y: number) => unknown;
+        setAlpha: (alpha: number) => unknown;
+        setRotation: (rotation: number) => unknown;
+        setDepth: (depth: number) => unknown;
+        destroy: () => void;
+        x: number;
+        y: number;
+      };
+    };
+    load!: { image: (key: string, url: string) => void };
+    input!: {
+      on: (event: string, fn: (...args: unknown[]) => void) => void;
+      off: (event: string, fn: (...args: unknown[]) => void) => void;
+    };
+    cameras!: { main: { setBackgroundColor: (color: string) => void } };
+    scale!: { width: number; height: number };
 
     constructor() {
       super({ key: BRIDGE_SCENE_KEY });
     }
 
+    preload(): void {
+      this.load.image(BRIDGE_CAR_TEXTURE_KEY, options.carTextureUrl ?? carSpriteUrl);
+    }
+
     create(): void {
       controller.attach(this as never);
+      resolveReady();
     }
   }
 
@@ -78,6 +157,14 @@ export async function createBridgeGame(
     parent: options.parent,
     width: options.width,
     height: options.height,
+    resolution: Math.min(
+      2,
+      Math.max(
+        1,
+        options.resolution ??
+          (typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1),
+      ),
+    ),
     backgroundColor: "#e8f1f8",
     scene: [HostedBridgeScene],
     banner: false,
@@ -88,6 +175,7 @@ export async function createBridgeGame(
   const handle: BridgeGameHandle = {
     game,
     controller,
+    ready,
     reconcile(vm: BridgeViewModel) {
       if (destroyed) return;
       controller.reconcile(vm);

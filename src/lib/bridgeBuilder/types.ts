@@ -7,6 +7,8 @@ export interface Piece {
   units: number;
   label: string;
   kind: PieceKind;
+  /** Engine-only generation metadata; deliberately omitted from renderer view models. */
+  isDecoy?: boolean;
 }
 
 export interface BridgePuzzle {

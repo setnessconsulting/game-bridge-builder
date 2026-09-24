@@ -1,0 +1,140 @@
+name: Bridge Builder release candidate
+
+on:
+  # Bootstrap Wave 2 validation without requiring this branch-only workflow
+  # to be present on the repository default branch. R2 upload remains manual
+  # and requires separately configured GitHub environment secrets.
+  push:
+    branches:
+      - codex/bridge-builder-wave2
+    paths:
+      - .github/workflows/release-candidate.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable qualification candidate version, for example 0.1.0-qualification.1
+        required: true
+        type: string
+      publish_to_r2:
+        description: Upload to private R2 (requires the bridge-builder-qualification environment secrets)
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: bridge-builder-candidate-${{ inputs.version || '0.1.0-qualification.8' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate qualification-only release input
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version || '0.1.0-qualification.8' }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" == "codex/bridge-builder-wave2" ]] || {
+            echo "Candidate uploads are restricted to codex/bridge-builder-wave2."
+            exit 1
+          }
+          [[ "$VERSION" =~ ^0\.1\.0-qualification\.[0-9]+$ ]] || {
+            echo "Version must use the immutable 0.1.0-qualification.N format."
+            exit 1
+          }
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run release:build
+        env:
+          GAME_RELEASE_VERSION: ${{ inputs.version || '0.1.0-qualification.8' }}
+          GAME_COMMIT_SHA: ${{ github.sha }}
+      - run: npm run release:check
+        env:
+          GAME_RELEASE_VERSION: ${{ inputs.version || '0.1.0-qualification.8' }}
+          GAME_COMMIT_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: bridge-builder-${{ inputs.version || '0.1.0-qualification.8' }}
+          path: dist
+
+  publish-r2:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_r2 }}
+    needs: validate
+    runs-on: ubuntu-24.04
+    environment: bridge-builder-qualification
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: bridge-builder-${{ inputs.version || '0.1.0-qualification.8' }}
+          path: dist
+      # The R2 upload is intentionally a candidate-only action. It never edits
+      # games-site's catalog or promotes LevelBest.
+      - name: Install Wrangler
+        run: npm install --global wrangler@4.134.0
+      - name: Upload immutable candidate to private R2
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version || '0.1.0-qualification.8' }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          prefix="bridge-builder/${VERSION}"
+          mapfile -d '' files < <(find dist -type f ! -name release-manifest.json -print0 | sort -z)
+          files+=(dist/release-manifest.json)
+
+          # Wrangler has no create-only switch. Preflight every immutable key;
+          # any existing object (including a partial prior upload) requires a
+          # new version, while unexpected API/auth errors fail closed.
+          for file in "${files[@]}"; do
+            relative="${file#dist/}"
+            key="setnessconsulting-games/${prefix}/${relative}"
+            set +e
+            output="$(wrangler r2 object get "$key" --remote --pipe 2>&1 >/dev/null)"
+            status=$?
+            set -e
+            if [[ $status -eq 0 ]]; then
+              echo "Refusing to overwrite immutable R2 object: ${key}"
+              exit 1
+            fi
+            if [[ "$output" != *"The specified key does not exist."* ]]; then
+              echo "Could not confirm the R2 object is absent: ${key}"
+              echo "$output"
+              exit 1
+            fi
+          done
+
+          for file in "${files[@]}"; do
+            relative="${file#dist/}"
+            case "${relative,,}" in
+              *.css) content_type="text/css" ;;
+              *.js|*.mjs) content_type="text/javascript" ;;
+              *.html) content_type="text/html" ;;
+              *.json) content_type="application/json" ;;
+              *.wasm) content_type="application/wasm" ;;
+              *.svg) content_type="image/svg+xml" ;;
+              *.png) content_type="image/png" ;;
+              *.jpg|*.jpeg) content_type="image/jpeg" ;;
+              *.webp) content_type="image/webp" ;;
+              *) content_type="$(file --brief --mime-type "$file")" ;;
+            esac
+            wrangler r2 object put "setnessconsulting-games/${prefix}/${relative}" \
+              --file="$file" \
+              --content-type="$content_type" \
+              --cache-control="public, max-age=31536000, immutable" \
+              --remote
+          done

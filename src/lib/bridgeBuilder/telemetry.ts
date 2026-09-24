@@ -36,6 +36,9 @@ const EVENT_TYPES: ReadonlySet<string> = new Set<TelemetryEventType>([
   "piece_merge",
   "piece_split",
   "plank_lift",
+  "invalid_intent_rejected",
+  "stale_intent_dropped",
+  "renderer_version_skew",
   "invariant_violation",
 ]);
 

@@ -1,4 +1,4 @@
-import BridgeBuilder from "./components/BridgeBuilder";
+import BridgeBuilderCandidate from "./components/BridgeBuilderCandidate";
 import BridgeBuilderPhaserHost from "./components/BridgeBuilderPhaserHost";
 
 export default function App() {
@@ -13,19 +13,19 @@ export default function App() {
         style={game132 ? { maxWidth: 1120 } : undefined}
       >
         <header className="page-copy">
-          <p className="eyebrow">LevelBest game laboratory</p>
+          <p className="eyebrow">Bridge Builder</p>
           <h1>Bridge Builder</h1>
           <p>
             {game132
-              ? "GAME-132 qualification slice: compose exact lengths through the Phaser presentation while the TypeScript engine remains the sole correctness authority."
-              : "Build a stable bridge by reasoning about balance, load, and structure. Try a design, inspect the result, and revise it."}
+              ? "Build each bridge to fit its span exactly."
+              : "Choose planks, close the gap, and build each bridge to fit exactly."}
           </p>
         </header>
         <section aria-label="Bridge Builder game" className="demo-panel">
           {game132 ? (
             <BridgeBuilderPhaserHost reducedMotion={reducedMotion} />
           ) : (
-            <BridgeBuilder />
+            <BridgeBuilderCandidate />
           )}
         </section>
       </div>
