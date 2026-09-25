@@ -21,7 +21,7 @@
     "release:check": "node scripts/create-release-manifest.mjs dist --check"
   },
   "dependencies": {
-    "@setnessconsulting/game-platform-sdk": "github:setnessconsulting/project-game-platform-sdk#sdk-v0.1.0",
+    "@setnessconsulting/game-platform-sdk": "https://github.com/setnessconsulting/project-game-platform-sdk.git#sdk-v0.1.0",
     "phaser": "4.2.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"
