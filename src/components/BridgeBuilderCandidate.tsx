@@ -60,6 +60,7 @@ import { closeBridgeSoundContext, playBridgeCue } from "@/lib/bridgeBuilder/soun
 import type { BridgePuzzle, Piece } from "@/lib/bridgeBuilder/types";
 import carSpriteUrl from "@/assets/bridge-builder/car-sprite.png";
 import { deriveBridgeViewModel, type BridgeNumberFace, type BridgeViewModel } from "@/lib/bridgeBuilder/viewModel";
+import { BridgeBuilderHostRuntime } from "@/lib/bridgeBuilder/hostRuntime";
 import BridgeCanvas from "./BridgeCanvas";
 
 function lastPlaced(state: BridgeSessionState): Piece | undefined {
@@ -255,6 +256,7 @@ export default function BridgeBuilderCandidate({ surface = "free" }: { surface?:
   // below the fold inside a scroll trap — scrolled into view on appearance.
   const expiredNoticeRef = useRef<HTMLDivElement | null>(null);
   const summaryRef = useRef<HTMLElement | null>(null);
+  const hostRuntimeRef = useRef<BridgeBuilderHostRuntime | null>(null);
 
   const layout = useMemo(
     () => createBridgeLayout({ canvasWidth: canvasSize.width, canvasHeight: canvasSize.height }),
@@ -329,6 +331,25 @@ export default function BridgeBuilderCandidate({ surface = "free" }: { surface?:
     media.addEventListener?.("change", onChange);
     return () => media.removeEventListener?.("change", onChange);
   }, []);
+
+  // SDK-6: open the Game Platform SDK host transport only when framed with
+  // gpsdkChannel + gpsdkSession. Standalone preview stays unchanged.
+  useEffect(() => {
+    const runtime = new BridgeBuilderHostRuntime();
+    runtime.connect();
+    hostRuntimeRef.current = runtime;
+    return () => {
+      runtime.destroy();
+      hostRuntimeRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!roundComplete) return;
+    hostRuntimeRef.current?.notifySessionComplete(
+      clockEnded ? "deadline" : "game-completed",
+    );
+  }, [roundComplete, clockEnded]);
 
   useEffect(() => {
     if (!hasStarted || relaxed) return;
