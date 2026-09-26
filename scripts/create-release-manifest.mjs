@@ -9,6 +9,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 import {
   generateReleaseManifest,
@@ -84,12 +85,13 @@ async function main() {
           verification.errors.join("\n"),
       );
     }
-    // Also confirm metadata fields the hosted reader asserts still match.
-    if (current.game !== next.game || current.entryFile !== next.entryFile) {
-      throw new Error("release-manifest.json game/entryFile metadata drifted");
-    }
-    if (current.validationStatus !== "candidate-not-approved") {
-      throw new Error("release-manifest.json validationStatus must stay candidate-not-approved");
+    // The SDK verifier checks payload files; it does not compare manifest
+    // provenance or candidate metadata. Keep every generated metadata field
+    // bound to the current source, lockfile, release version, and workflow.
+    const { files: _currentFiles, ...currentMetadata } = current;
+    const { files: _nextFiles, ...nextMetadata } = next;
+    if (!isDeepStrictEqual(currentMetadata, nextMetadata)) {
+      throw new Error("release-manifest.json metadata does not match the current build inputs");
     }
     return;
   }
