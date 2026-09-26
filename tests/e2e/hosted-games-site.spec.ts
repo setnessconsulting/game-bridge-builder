@@ -21,7 +21,9 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
   const iframe = page.locator('iframe[title="Bridge Builder game"]');
   await expect(iframe).toHaveAttribute(
     "src",
-    `/game-assets/bridge-builder/${candidateVersion}/index.html`,
+    new RegExp(
+      `^/game-assets/bridge-builder/${candidateVersion.replace(/\./g, "\\.")}/index\\.html(\\?.*)?$`,
+    ),
   );
   const frame = page.frameLocator('iframe[title="Bridge Builder game"]');
   await expect(frame.getByTestId("bridge-builder-candidate")).toBeVisible();

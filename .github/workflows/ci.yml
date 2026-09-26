@@ -16,10 +16,14 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GAME_PLATFORM_SDK_TOKEN }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
+      - name: Fetch the private Game Platform SDK over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
       - run: npm ci
       - name: Lint
         run: npm run lint
@@ -38,10 +42,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GAME_PLATFORM_SDK_TOKEN }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
+      - name: Fetch the private Game Platform SDK over HTTPS
+        run: git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
       - run: npm ci
       - name: Record installed Phaser and Playwright packages
         run: npm ls phaser @playwright/test
