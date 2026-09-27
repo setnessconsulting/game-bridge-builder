@@ -21,7 +21,9 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
   const iframe = page.locator('iframe[title="Bridge Builder game"]');
   await expect(iframe).toHaveAttribute(
     "src",
-    `/game-assets/bridge-builder/${candidateVersion}/index.html`,
+    new RegExp(
+      `^/game-assets/bridge-builder/${candidateVersion.replace(/\./g, "\\.")}/index\\.html(\\?.*)?$`,
+    ),
   );
   const frame = page.frameLocator('iframe[title="Bridge Builder game"]');
   await expect(frame.getByTestId("bridge-builder-candidate")).toBeVisible();
@@ -32,6 +34,12 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
     "Phaser rendering surface ready.",
   );
   await expect(frame.getByTestId("bridge-dom-mirror")).toBeVisible();
+
+  // SDK-6: the candidate's guest transport completes the GPSDK handshake with the
+  // hosted games-site frame; the host announces readiness on its status region.
+  await expect(page.locator("[data-gpsdk-handshake-status]")).toHaveText(
+    "Game connection ready.",
+  );
 
   // Exercise the actual candidate inside the hosted frame, not only the shell.
   await frame.getByTestId("piece-plank-4").click();
