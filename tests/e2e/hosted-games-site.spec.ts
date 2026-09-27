@@ -35,6 +35,12 @@ test("loads the pinned Bridge Builder candidate through the hosted games-site fr
   );
   await expect(frame.getByTestId("bridge-dom-mirror")).toBeVisible();
 
+  // SDK-6: the candidate's guest transport completes the GPSDK handshake with the
+  // hosted games-site frame; the host announces readiness on its status region.
+  await expect(page.locator("[data-gpsdk-handshake-status]")).toHaveText(
+    "Game connection ready.",
+  );
+
   // Exercise the actual candidate inside the hosted frame, not only the shell.
   await frame.getByTestId("piece-plank-4").click();
   await frame.getByTestId("piece-plank-6").click();

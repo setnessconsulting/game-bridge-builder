@@ -16,7 +16,7 @@ import { IframeTransport, type HostTransport } from "@setnessconsulting/game-pla
 export const BRIDGE_BUILDER_GAME_IDENTITY: GameIdentity = {
   gameId: "bridge-builder",
   gameVersion: "0.1.0",
-  sdkVersion: "0.1.0",
+  sdkVersion: "0.1.1",
   protocolVersion: "1.0",
   runtimeKind: "web-canvas",
   capabilities: {
