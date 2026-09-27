@@ -131,8 +131,14 @@ test.describe("GAME-306 second-construction offer", () => {
     await expect(page.getByTestId("bridge-progress")).toHaveText("Bridge 3 of 6");
     await solveCurrentBridge(page);
     await expect(page.getByTestId("second-build-offer")).toBeVisible();
-    await page.getByTestId("bridge-builder-candidate").press("Escape");
+    // Focus inside the candidate so the keydown deterministically reaches the
+    // onKeyDown handler even when the solve re-render dropped focus to <body>.
+    await page.getByTestId("second-build-decline").focus();
+    await page.keyboard.press("Escape");
     await expect(page.getByTestId("second-build-offer")).toHaveCount(0);
+    // Escape dismissed the live offer, not the 5 s auto-dismiss timer: the
+    // pause fallback must not have opened.
+    await expect(page.getByTestId("bridge-builder-candidate")).toHaveAttribute("data-paused", "false");
   });
 
   test("the 5 s card lifetime auto-dismisses without blocking the next bridge", async ({ page }) => {
