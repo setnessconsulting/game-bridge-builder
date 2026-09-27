@@ -16,6 +16,14 @@ npm run dev
 Then open the local Vite URL shown in the terminal. The candidate is served from this standalone
 repository while it is qualified; `games-site` hosts the approved versioned build later.
 
+### Game Platform SDK dependency
+
+`npm install` fetches `@setnessconsulting/game-platform-sdk` from a private GitHub repository over
+SSH. A contributor machine therefore needs an SSH key for `github.com` that can read
+`setnessconsulting/project-game-platform-sdk` — a personal key with read access, or the
+repository's read-only deploy key. CI installs through the `GAME_PLATFORM_SDK_DEPLOY_KEY` secret
+instead; never commit a key.
+
 ## Validate
 
 ```text
@@ -50,8 +58,12 @@ The TypeScript engine remains the sole gameplay authority. Renderers present sta
 `dist/`. The release manifest records the commit, version, entry file, payload hashes/sizes/content
 types, and validation-evidence references; it marks a local build as `candidate-not-approved`.
 
-`games-site` owns the catalog, launcher, same-origin route, and approved R2 version pointer. Its
-production Bridge Builder entry remains `coming-soon` during qualification. LevelBest is unchanged
-and is a separate post-approval promotion that consumes the exact pinned artifact without copying
-game source. The remaining implementation and human-evidence gates are tracked in
+`games-site` owns the catalog, launcher, same-origin route, and approved R2 version pointer.
+Bridge Builder is promoted: `games-site` production selects `0.1.0-qualification.13` (source commit
+`3f33896399e7c555bb80b71cde454cf8bb51b612`, SDK `sdk-v0.1.1` at
+`8933746ebefe128a23b08f3fc9fd6796f4d906bd`), which carries the Game Platform SDK guest transport and
+completes the host handshake at `/bridge-builder/play/`. The previous known-good pointer,
+`0.1.0-qualification.12`, remains published for rollback. LevelBest is unchanged and is a separate
+promotion that consumes the exact pinned artifact without copying game source. The remaining
+implementation and human-evidence gates are tracked in
 [GAME-105](https://setnessconsulting.atlassian.net/browse/GAME-105).
