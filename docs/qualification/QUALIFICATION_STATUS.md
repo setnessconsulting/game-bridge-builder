@@ -4,7 +4,9 @@
 
 **Candidate status:** `promoted-to-production` (the immutable artifact manifest remains `candidate-not-approved`)
 
-**Current candidate:** `0.1.0-qualification.13` — published immutably to private R2 and served through the games-site production catalog. Verified live 2026-10-01: the production play route pins `/game-assets/bridge-builder/0.1.0-qualification.13/index.html`, and that manifest records source commit `3f33896399e7c555bb80b71cde454cf8bb51b612`.
+**Current candidate:** `0.1.0-qualification.14` — published immutably to private R2 and served through the games-site production catalog. Verified live 2026-10-01: the production play route pins `/game-assets/bridge-builder/0.1.0-qualification.14/index.html`, and that manifest records source commit `9b4fdb0f0826ab893c9b70b0a50ce1b9521cdb89`. Production manifest and every listed asset verified by byte count and SHA-256 through the public route.
+
+**Rollback target:** `0.1.0-qualification.13` (still published; the pointer live immediately before this promotion).
 
 **Reviewed `main` head:** `b109039a1309cb3754586783b8d549d3a3b787ec`
 
@@ -16,15 +18,27 @@
 
 This record distinguishes engineering checks from hosted, owner, and human-gated release evidence. LevelBest remains a separate integration.
 
-## Current candidate checks — candidate `.13`
+## Current candidate checks — candidate `.14`
 
-- `.13` includes the GAME-297 player-ready presentation slice (merged as `game-bridge-builder` PR #5), the GAME-302/303/304/305/306 follow-ups (PRs #12–#17), and the SDK-6/7 adoption work. The `.13` source tree contains `tests/bridgeBuilderGame297.test.ts` and `tests/e2e/bridgeBuilder.presentation-297.spec.ts`; those commits were squash-merged, so the original branch SHAs are not ancestors of `3f33896`.
-- **GAME-297 hosted retest sweep (2026-10-01)** — `tests/e2e/bridgeBuilder.hosted-297-sweep.spec.ts` run against `https://games.setnessconsulting.com` with `PLAYWRIGHT_BASE_URL`. Result: **4 passed, 2 failed**.
-  - Passing hosted coverage: active/underfill with the `◌` glyph and exact remaining-span copy; exact-fit with the `✓` glyph, celebration geometry and the `crossing` vehicle; overfill with the `⚠` glyph, splash rings, `falling` vehicle and the `⚠` plank teach copy; honest pause copy with no qualification wording anywhere on the hosted player surface; and phone (390×844) and desktop (1280×800) readability, overflow and 44 px touch targets inside the hosted iframe.
-  - **Defect found (AC5): the reduced-motion success payoff is effectively invisible in production `.13`.** With reduced motion enabled the exact-fit celebration renders for ~2 animation frames (~30 ms) before the round advances. The cause is `BridgeBuilderCandidate.tsx` dispatching `presentationComplete` in the same tick as the `exact` verdict when reduced motion is on, so the `exact` state is never painted. Reduced-motion players therefore get no static success state at all, only a completed round.
-  - Fixed on `feat/game-297-hosted-state-sweep` by holding the success state for `REDUCED_MOTION_PRESENTATION_MS = 600` (shorter than the 1200 ms animated window so pacing is not stretched). Measured after the fix: celebration frames went from 2 → 32 with motion off, unchanged at ~72 with motion on.
-  - **This fix is not in production.** `.13` still serves the defect. Re-verifying the reduced-motion equivalent hosted requires an owner promotion (O-6) of a candidate built from the fix; that is an owner release action and was deliberately not performed here.
+- `.14` is the promoted production candidate, built from `9b4fdb0f0826ab893c9b70b0a50ce1b9521cdb89` (`game-bridge-builder` PR #18). It carries the whole GAME-297 player-ready presentation slice plus the GAME-302/303/304/305/306 follow-ups, the SDK-6/7 adoption work, and the reduced-motion success-payoff fix.
+- **Release integrity.** Published immutably to private R2 under `bridge-builder/0.1.0-qualification.14/` after preflighting every key as absent, manifest published last. All 6 manifest-listed objects were read back and matched on **byte count and SHA-256**, both directly from R2 and again through production after the catalog pointer moved.
+- **Promotion (owner-approved 2026-10-01).** `games-site` PR #43, merge `0d2d73d5`, `verify` and the Cloudflare Pages check green on head `b1e5417`. The change is pointer-only: the committed catalog constant, the preview variable, the resolved-play-source test expectation, and the deployment/rollback records. No game source or immutable artifact was modified. Production readback confirmed the play route pins `.14`.
+- **GAME-297 hosted retest sweep (2026-10-01), re-run against promoted `.14`:** **6 passed, 0 failed**, and stable at **12 passed** with `--repeat-each=2`. `tests/e2e/bridgeBuilder.hosted-297-sweep.spec.ts` drives the real hosted iframe and covers every state family AC10 names:
+  - active/underfill with the `◌` glyph, `10 open`, and exact remaining-span copy;
+  - exact-fit with the `✓` glyph, celebration geometry and the `crossing` vehicle;
+  - overfill with the `⚠` glyph, splash rings, `falling` vehicle and the `⚠` plank teach copy;
+  - honest pause copy with no qualification wording anywhere on the hosted player surface;
+  - reduced-motion and mute equivalents, including the held success payoff and the parked marker that replaces the crossing tween;
+  - phone (390×844) and desktop (1280×800) readability, no horizontal overflow, and ≥44 px touch targets.
+  - The pre-existing `hosted-games-site.spec.ts` journey also passes against `.14`, including the GPSDK handshake, exact-fit click placement, and full manifest plus per-asset byte/hash/immutable-cache verification.
+- **Defect found and closed in this wave (AC5).** Against `.13` the sweep returned 4 passed / 2 failed: with reduced motion enabled the exact-fit celebration rendered for ~2 animation frames (~30 ms), because `presentationComplete` was dispatched in the same tick as the `exact` verdict, so `exact` was never painted. Reduced-motion players got no static success state at all. `.14` holds that state for `REDUCED_MOTION_PRESENTATION_MS = 600` (under the 1200 ms animated window, so pacing is not stretched). Measured with a `requestAnimationFrame` sampler: celebration frames 2 → 32 with motion off, 72 unchanged with motion on. `tests/e2e/bridgeBuilder.presentation-297.spec.ts` carries a regression guard.
 - The production manifest remains `validationStatus: candidate-not-approved` with all four build checks `not-asserted` and `hosted-games-site-preview` / `named-human-approval-gates` `pending`, by design. Production approval is represented by the reviewed games-site catalog merge, not by the manifest.
+- **Rollback target: `.13`.** It remains published and was the pointer live immediately before this promotion. `0.1.0-qualification.12` stays published as the older rehearsal target. Rolling back is a revert of the games-site pointer.
+
+## Historical candidate checks — candidate `.13`
+
+- `.13` includes the GAME-297 player-ready presentation slice (merged as `game-bridge-builder` PR #5), the GAME-302/303/304/305/306 follow-ups (PRs #12–#17), and the SDK-6/7 adoption work. Its source tree contains `tests/bridgeBuilderGame297.test.ts` and `tests/e2e/bridgeBuilder.presentation-297.spec.ts`; those commits were squash-merged, so the original branch SHAs are not ancestors of `3f33896`. That is why an ancestry check appears to show the 297 slice missing when it is present.
+- **GAME-297 hosted retest sweep against `.13` (2026-10-01): 4 passed, 2 failed.** Passing: active/underfill, exact-fit + celebration + crossing, overfill warning/splash/teach copy, honest pause copy, player-surface copy, and phone/desktop readability inside the hosted iframe. Failing: the reduced-motion success payoff, per the defect fixed in `.14` above.
 
 ## Historical candidate checks — candidate `.10`
 
@@ -69,7 +83,7 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
 
 ## Post-promotion follow-up
 
-The owner-approved GAME-297 promotion is complete. The following broader qualification items remain follow-up hardening work and do not change the current Bridge Builder production pointer:
+The owner-approved GAME-297 promotions are complete: `.10` for the presentation slice, then `.14` for the reduced-motion payoff fix after the hosted sweep found the defect. The following broader qualification items remain follow-up hardening work and do not change the current Bridge Builder production pointer:
 
 - Broader cross-surface lifecycle qualification for hidden-tab/pause-budget boundaries, failover, session containment, and teardown. Current tests cover the recorded candidate journeys and contract cases but do not close every Gate C/D lifecycle scenario.
 - Production design authority and handoff for GAME-171, including reviewed Figma states; an implementation candidate is not a substitute for approved art direction.
