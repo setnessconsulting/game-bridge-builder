@@ -105,12 +105,46 @@ Stable `piece.id` values connect:
 - React/DOM semantic controls (tray, lengths, selected, composition, remaining, verdict)
 - Phaser sprites / hit targets, including optional g12 dot faces
 
+## Presentation ownership (GAME-171 AC8)
+
+Which surface owns each of the 20 presentation states. Every state is derived from the
+same `BridgeViewModel` in both surfaces; ownership decides only *where it is rendered*.
+This is an implementation-truth record, not a design claim — GAME-171 still owns the
+production Figma authority and the frames themselves.
+
+| State | Owner | Notes |
+| --- | --- | --- |
+| `span` | Both | Phaser draws the gap/cliffs; DOM exposes the remaining-span sentence and the open-slot button. |
+| `pieces` | DOM | Tray and placed pieces are semantic controls; Phaser mirrors them as sprites. |
+| `pieceTray` | DOM | Tray group and plank buttons are DOM-first for assistive tech. |
+| `selected` | Both | DOM selected styling + Phaser selected plank treatment. |
+| `focused` | DOM | Keyboard focus ring is DOM-owned; Phaser does not own focus. |
+| `dragging` | Both | Phaser owns the drag sprite; DOM owns the HTML5-drag affordance. Decorative only. |
+| `placementPreview` | Phaser | Ghost/preview rendering is scene-owned; DOM shows the overhang preview label. |
+| `placed` | Both | Committed pieces render in both surfaces from `slots`. |
+| `removable` | DOM | Removal affordance and its label are DOM-owned. |
+| `remainingSpan` | DOM | Exact remaining units are announced; Phaser may show the numeric note. |
+| `underfill` | Both | Open-remainder geometry plus the `◌` glyph. |
+| `overfill` | Both | Overhang cross-hatch plus the `⚠` glyph and splash. |
+| `exact` | Both | Check geometry, `✓` glyph, celebration ring. |
+| `incorrectSubmit` | DOM | Signed-difference restatement is DOM-owned copy; Phaser shows the geometry. |
+| `success` | Both | Celebration geometry in both; audio is DOM-owned with a mute guard. |
+| `crossing` | Phaser | Post-verdict crossing FX is scene-owned and skipped under reduced motion. |
+| `environment` | Phaser | Canyon/gap/supports/shadows are scene-owned. |
+| `hints` | Both | Ladder level and highlight; Phaser paints the ghost. |
+| `reducedMotion` | Both | Both surfaces read the same flag; static equivalents replace tweens. |
+| `responsive` | DOM | Layout buckets are DOM/CSS-owned; Phaser follows the derived 16:9 surface. |
+
+Decorative presentation must not emit gameplay intents. The eight-intent union in
+`src/lib/bridgeBuilder/intents.ts` stays closed, and the Phaser port's reconcile path
+emits none (covered by `tests/bridgeBuilderGame297.test.ts`).
+
 ## Figma / API-37 status
 
 | Item | Status |
 | --- | --- |
-| API-37 platform (`project-figma-api`) | Available as portfolio Figma integration |
-| Official Figma MCP auth | Connected (seat: **View / Starter**) |
+| API-37 platform (`project-figma-api`) | Available as portfolio Figma integration. Credential **not present** in this environment as of 2026-10-01 (`figma-api auth status` → `configured: false`). |
+| Official Figma MCP auth | Not connected in this environment. A prior session recorded seat **View / Starter**. |
 | Bridge Builder GAME-130 design file | **Created** — file key below |
 
 **File identity**
@@ -151,6 +185,19 @@ Stable `piece.id` values connect:
 1. Flesh out world layout, piece variants, crossing cinematic, and reduced-motion art beyond labeled shells.
 2. Annotate drag / tap-tap / keyboard equivalence on the canvas.
 3. Add phone/tablet/desktop art variants matching `responsive`.
+
+**GAME-171 handoff status — 2026-10-01.** The 20 state names above and their node IDs are
+the GAME-130 shells. Whether each now corresponds to a *named production frame* in the
+Figma file is a GAME-171 acceptance criterion and is **unverified** — it has not been
+checked against the Figma file from this environment, because no Figma credential is
+present (`figma-api auth status` → `configured: false`) and no Figma MCP server is
+connected. Treat the mapping below as a claim awaiting verification, not as a fact:
+
+- **Code-side, verified:** the 20 names in `viewModel.ts` are the live set produced by
+  `deriveBridgeViewModel`, and the Phaser-owned / DOM-owned split is recorded above.
+- **Figma-side, unverified:** that the file contains named production frames for all 20,
+  plus the host-shell surfaces (S0/S3/S4/S5/S6), responsive variants, countdown
+  sequence, audio ceiling and per-cue mute variants that GAME-171 AC11–AC14 require.
 
 Implementation truth for code remains this contract + `viewModel.ts` + tests.
 

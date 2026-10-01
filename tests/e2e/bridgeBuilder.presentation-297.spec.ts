@@ -82,6 +82,25 @@ test.describe("GAME-297 player-ready presentation", () => {
     await expect(page.getByTestId("bridge-progress")).toHaveText("Bridge 2 of 6");
   });
 
+  test("reduced motion holds the success payoff long enough to actually see it", async ({ page }) => {
+    await startRound(page);
+    await page.getByRole("button", { name: "Reduce motion" }).click();
+    await expect(page.getByTestId("bridge-dom-mirror")).toHaveAttribute("data-reduced-motion", "true");
+
+    await page.getByTestId("piece-plank-4").click();
+    await page.getByTestId("piece-plank-6").click();
+
+    // AC5 requires a reduced-motion equivalent of the success payoff, not just
+    // a completed round. Regression guard: dispatching presentationComplete in
+    // the same tick as the verdict painted `exact` for ~1 frame, so the static
+    // payoff was effectively invisible to the player.
+    await expect(page.getByTestId("bridge-celebration")).toBeVisible();
+    await expect(page.getByTestId("bridge-state-glyph")).toHaveText("✓");
+    await expect(page.getByTestId("bridge-vehicle")).toHaveAttribute("data-state", "parked");
+    // The crossing tween is the motion being removed, so data-crossing stays false.
+    await expect(page.getByTestId("bridge-dom-mirror")).toHaveAttribute("data-crossing", "false");
+  });
+
   test("honest pause copy and no qualification/debug wording on the player surface", async ({ page }) => {
     await startRound(page);
     await page.getByRole("button", { name: "Pause", exact: true }).click();

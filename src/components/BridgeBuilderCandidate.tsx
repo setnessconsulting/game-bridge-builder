@@ -68,6 +68,12 @@ function lastPlaced(state: BridgeSessionState): Piece | undefined {
 }
 
 const CROSSING_PRESENTATION_MS = 1_200;
+// GAME-297: reduced-motion keeps the success state on screen, statically, for
+// long enough to actually be read. Dispatching presentationComplete in the same
+// tick as the verdict painted `exact` for ~1 frame, so the reduced-motion
+// equivalent was effectively invisible — the player got no payoff at all. This
+// is shorter than the animated window so pacing is not stretched.
+const REDUCED_MOTION_PRESENTATION_MS = 600;
 // GAME-306: second-construction card lifetime (UX MAJ-22). This is a
 // lifetime, not a gate — the next puzzle advances on its normal 900–1500 ms
 // schedule and the card auto-dismisses without ever blocking pacing.
@@ -394,11 +400,10 @@ export default function BridgeBuilderCandidate({ surface = "free" }: { surface?:
     ) {
       return;
     }
-    if (reducedMotion) {
-      presentationDispatchRef.current();
-      return;
-    }
-    const timer = window.setTimeout(() => presentationDispatchRef.current(), CROSSING_PRESENTATION_MS);
+    const timer = window.setTimeout(
+      () => presentationDispatchRef.current(),
+      reducedMotion ? REDUCED_MOTION_PRESENTATION_MS : CROSSING_PRESENTATION_MS,
+    );
     return () => window.clearTimeout(timer);
   }, [clock.capBridges, expired, reducedMotion, session.bridgesSolved, session.phase, session.presentationGeneration]);
 
