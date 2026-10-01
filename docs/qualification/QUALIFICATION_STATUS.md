@@ -1,22 +1,32 @@
 # Bridge Builder standalone qualification status
 
-**Current snapshot:** 2026-09-20
+**Current snapshot:** 2026-10-01
 
 **Candidate status:** `promoted-to-production` (the immutable artifact manifest remains `candidate-not-approved`)
 
-**Current candidate:** `0.1.0-qualification.10` — published immutably to private R2 and promoted through the games-site production catalog
+**Current candidate:** `0.1.0-qualification.13` — published immutably to private R2 and served through the games-site production catalog. Verified live 2026-10-01: the production play route pins `/game-assets/bridge-builder/0.1.0-qualification.13/index.html`, and that manifest records source commit `3f33896399e7c555bb80b71cde454cf8bb51b612`.
 
-**Candidate source commit:** `c432122cc2c2b04021a21a5961ddee37284d5667` (GAME-297 presentation transition, renderer-status, and player-copy fixes)
+**Reviewed `main` head:** `b109039a1309cb3754586783b8d549d3a3b787ec`
 
-**CI evidence:** [Bridge Builder CI run 35528215801](https://github.com/setnessconsulting/game-bridge-builder/actions/runs/35528215801) passed both `verify` and `real-phaser-render` for the source branch head; the immutable candidate payload is pinned to the source commit above.
+**SDK pin:** Game Platform SDK `sdk-v0.1.1` (`8933746ebefe128a23b08f3fc9fd6796f4d906bd`)
 
-**Production promotion:** [games-site PR #5](https://github.com/setnessconsulting/games-site/pull/5) merged as `914d594120edcaccbef35495df0d20e956d9ce03`; the Cloudflare Pages production deployment is [17913bdd](https://17913bdd.games-site-7pn.pages.dev) from that merge.
+**Historical candidate `.10`** was the artifact promoted by [games-site PR #5](https://github.com/setnessconsulting/games-site/pull/5) (`914d5941`, Cloudflare Pages `17913bdd`) from source `c432122`. Production has since advanced to `.13`; the `.10` evidence below is retained as the record for that wave.
 
-**Owner decisions:** O-1 through O-8 were approved as policy decisions on 2026-09-17. The `GAME-294` renderer-contract and `GAME-295` curriculum-supply implementations are present on the Wave 2 branch and pass their automated checks; Jira review/closeout is still open. Their proposed thresholds remain proposed, not ratified. O-7 executors and dates remain open.
+**Owner decisions:** O-1 through O-8 were approved as policy decisions on 2026-09-17. The `GAME-294` renderer-contract and `GAME-295` curriculum-supply implementations are present and pass their automated checks; Jira review/closeout is still open. Their proposed thresholds remain proposed, not ratified. O-7 executors and dates remain open.
 
-This record distinguishes engineering checks from hosted, owner, and human-gated release evidence. The owner approved GAME-297 promotion after Chrome and Android testing; LevelBest remains a separate integration.
+This record distinguishes engineering checks from hosted, owner, and human-gated release evidence. LevelBest remains a separate integration.
 
-## Current candidate checks — candidate `.10`
+## Current candidate checks — candidate `.13`
+
+- `.13` includes the GAME-297 player-ready presentation slice (merged as `game-bridge-builder` PR #5), the GAME-302/303/304/305/306 follow-ups (PRs #12–#17), and the SDK-6/7 adoption work. The `.13` source tree contains `tests/bridgeBuilderGame297.test.ts` and `tests/e2e/bridgeBuilder.presentation-297.spec.ts`; those commits were squash-merged, so the original branch SHAs are not ancestors of `3f33896`.
+- **GAME-297 hosted retest sweep (2026-10-01)** — `tests/e2e/bridgeBuilder.hosted-297-sweep.spec.ts` run against `https://games.setnessconsulting.com` with `PLAYWRIGHT_BASE_URL`. Result: **4 passed, 2 failed**.
+  - Passing hosted coverage: active/underfill with the `◌` glyph and exact remaining-span copy; exact-fit with the `✓` glyph, celebration geometry and the `crossing` vehicle; overfill with the `⚠` glyph, splash rings, `falling` vehicle and the `⚠` plank teach copy; honest pause copy with no qualification wording anywhere on the hosted player surface; and phone (390×844) and desktop (1280×800) readability, overflow and 44 px touch targets inside the hosted iframe.
+  - **Defect found (AC5): the reduced-motion success payoff is effectively invisible in production `.13`.** With reduced motion enabled the exact-fit celebration renders for ~2 animation frames (~30 ms) before the round advances. The cause is `BridgeBuilderCandidate.tsx` dispatching `presentationComplete` in the same tick as the `exact` verdict when reduced motion is on, so the `exact` state is never painted. Reduced-motion players therefore get no static success state at all, only a completed round.
+  - Fixed on `feat/game-297-hosted-state-sweep` by holding the success state for `REDUCED_MOTION_PRESENTATION_MS = 600` (shorter than the 1200 ms animated window so pacing is not stretched). Measured after the fix: celebration frames went from 2 → 32 with motion off, unchanged at ~72 with motion on.
+  - **This fix is not in production.** `.13` still serves the defect. Re-verifying the reduced-motion equivalent hosted requires an owner promotion (O-6) of a candidate built from the fix; that is an owner release action and was deliberately not performed here.
+- The production manifest remains `validationStatus: candidate-not-approved` with all four build checks `not-asserted` and `hosted-games-site-preview` / `named-human-approval-gates` `pending`, by design. Production approval is represented by the reviewed games-site catalog merge, not by the manifest.
+
+## Historical candidate checks — candidate `.10`
 
 - Candidate `.10` incorporates GAME-297's visual polish pass plus the follow-up player feedback: a procedural bridge environment with a larger water span, wood-style planks, high-resolution car artwork, explicit target-span feedback, Phaser/DOM visual parity, responsive layout, player-facing copy cleanup, click-to-place input with drag fallback, success crossing/audio cues, failure feedback for underfill/overfill, honest pause messaging, and reduced-motion handling. Gameplay math, intent authority, and the independent `/?game132=1` route remain unchanged.
 - The candidate workflow and local verification passed typecheck, lint, 182 unit tests across 18 files, release build, release-manifest check, and the real Phaser/SwiftShader render lane (2 passed) before publishing. The local E2E suite recorded 16 passed and 1 hosted-only skip; three suite-load timeouts each passed when rerun in isolation. The immutable R2 upload completed under `bridge-builder/0.1.0-qualification.10/`; the manifest records source commit `c432122cc2c2b04021a21a5961ddee37284d5667` and remains `candidate-not-approved`.
