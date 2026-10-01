@@ -6,7 +6,7 @@
 
 **Current candidate:** `0.1.0-qualification.14` — published immutably to private R2 and served through the games-site production catalog. Verified live 2026-10-01: the production play route pins `/game-assets/bridge-builder/0.1.0-qualification.14/index.html`, and that manifest records source commit `9b4fdb0f0826ab893c9b70b0a50ce1b9521cdb89`. Production manifest and every listed asset verified by byte count and SHA-256 through the public route.
 
-**Rollback target:** `0.1.0-qualification.13` (still published; the pointer live immediately before this promotion).
+**Rollback target:** `0.1.0-qualification.13` — still present and untouched in private R2 (the pointer live immediately before this promotion). It is **not** reachable over HTTP while the catalog approves only `.14`; see the rollback note below.
 
 **Reviewed `main` head:** `b109039a1309cb3754586783b8d549d3a3b787ec`
 
@@ -33,7 +33,7 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
   - The pre-existing `hosted-games-site.spec.ts` journey also passes against `.14`, including the GPSDK handshake, exact-fit click placement, and full manifest plus per-asset byte/hash/immutable-cache verification.
 - **Defect found and closed in this wave (AC5).** Against `.13` the sweep returned 4 passed / 2 failed: with reduced motion enabled the exact-fit celebration rendered for ~2 animation frames (~30 ms), because `presentationComplete` was dispatched in the same tick as the `exact` verdict, so `exact` was never painted. Reduced-motion players got no static success state at all. `.14` holds that state for `REDUCED_MOTION_PRESENTATION_MS = 600` (under the 1200 ms animated window, so pacing is not stretched). Measured with a `requestAnimationFrame` sampler: celebration frames 2 → 32 with motion off, 72 unchanged with motion on. `tests/e2e/bridgeBuilder.presentation-297.spec.ts` carries a regression guard.
 - The production manifest remains `validationStatus: candidate-not-approved` with all four build checks `not-asserted` and `hosted-games-site-preview` / `named-human-approval-gates` `pending`, by design. Production approval is represented by the reviewed games-site catalog merge, not by the manifest.
-- **Rollback target: `.13`.** It remains published and was the pointer live immediately before this promotion. `0.1.0-qualification.12` stays published as the older rehearsal target. Rolling back is a revert of the games-site pointer.
+- **Rollback target: `.13`.** Still present and untouched in private R2 (re-read 2026-10-01), and the pointer that was live immediately before this promotion. `0.1.0-qualification.12` is retained the same way as the older rehearsal target. **A rollback is a revert of the games-site pointer commit, not a re-publish:** the `/game-assets/...` route approves only the version the catalog names, so `.13` currently returns 404 (verified live) and only becomes reachable again once the pointer is reverted. No R2 object is republished or overwritten in either direction.
 
 ## Historical candidate checks — candidate `.13`
 
