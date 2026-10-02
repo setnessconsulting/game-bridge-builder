@@ -900,6 +900,7 @@ export default function BridgeBuilderCandidate({ surface = "free" }: { surface?:
             <>
               <button
                 type="button"
+                className="bb-setup-toggle"
                 data-testid="setup-relaxed"
                 aria-pressed={relaxed}
                 onClick={() => chooseRelaxed(!relaxed)}

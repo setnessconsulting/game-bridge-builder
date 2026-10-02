@@ -1204,6 +1204,12 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
 }
 .bb-candidate-setup h2, .bb-candidate-setup p { margin-bottom: 0; }
 .bb-candidate-setup > .button { justify-self: start; min-height: 48px; }
+/* GAME-297 follow-up: the Relaxed setup toggle is a real choice control, so it
+   meets the same 48px touch target as the other setup buttons rather than
+   falling back to the ~31px user-agent default. State is never colour alone —
+   aria-pressed carries it and the border/background match the face choice. */
+.bb-setup-toggle { justify-self: start; min-height: 48px; padding: 9px 16px; border: 2px solid #c9a776; border-radius: 12px; background: #fffdf7; color: var(--bb-ink); font-weight: 800; }
+.bb-setup-toggle[aria-pressed="true"] { border-color: var(--bb-wood-dark); background: #f2d09a; box-shadow: 0 0 0 3px rgba(106,58,33,.16); }
 .bb-face-choice { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; border: 0; }
 .bb-face-choice legend { width: 100%; margin-bottom: 2px; font-weight: 800; }
 .bb-face-choice button { min-height: 48px; padding: 9px 16px; border: 2px solid #c9a776; border-radius: 12px; background: #fffdf7; color: var(--bb-ink); font-weight: 800; }
@@ -1495,6 +1501,10 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
   .page-shell:has(.bb-candidate) .demo-panel { padding: 8px; }
   .page-shell:has(.bb-candidate) .page-copy h1 { margin-bottom: 2px; font-size: 22px; }
   .bb-candidate { gap: 8px; }
+  /* GAME-297 follow-up: setup gets tighter vertical rhythm on short
+     viewports so the 48px control floor does not cost a scroll. The control
+     height itself is untouched — only the gaps and the card padding give. */
+  .bb-candidate-setup { gap: 10px; padding: 12px; }
   .bb-candidate-header { gap: 6px; }
   .bb-candidate-header h2 { font-size: 18px; margin-bottom: 2px; }
   .bb-candidate-lede { font-size: 12px; }
