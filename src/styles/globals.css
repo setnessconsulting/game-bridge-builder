@@ -1501,6 +1501,10 @@ h3 { font-size: 20px; line-height: 1.2; margin-bottom: 10px; }
   .page-shell:has(.bb-candidate) .demo-panel { padding: 8px; }
   .page-shell:has(.bb-candidate) .page-copy h1 { margin-bottom: 2px; font-size: 22px; }
   .bb-candidate { gap: 8px; }
+  /* GAME-297 follow-up: setup gets tighter vertical rhythm on short
+     viewports so the 48px control floor does not cost a scroll. The control
+     height itself is untouched — only the gaps and the card padding give. */
+  .bb-candidate-setup { gap: 10px; padding: 12px; }
   .bb-candidate-header { gap: 6px; }
   .bb-candidate-header h2 { font-size: 18px; margin-bottom: 2px; }
   .bb-candidate-lede { font-size: 12px; }
