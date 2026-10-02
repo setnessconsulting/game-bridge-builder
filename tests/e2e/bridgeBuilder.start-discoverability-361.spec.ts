@@ -155,6 +155,49 @@ test.describe("GAME-361 setup/start discoverability", () => {
     await expect(page.getByTestId("bridge-question")).toBeVisible();
   });
 
+  test("every setup choice control meets the 44px touch-target floor", async ({ page }) => {
+    await openSetup(page, { width: 1280, height: 720 }, false);
+
+    // GAME-297 follow-up: the Relaxed toggle used to render at the ~31px
+    // user-agent default because it carried no class of its own. Every
+    // interactive setup control now meets the same floor GAME-303 enforces
+    // for gameplay controls.
+    const controls = page.locator('[data-testid="bridge-setup"] button');
+    const count = await controls.count();
+    expect(count, "setup exposes choice controls").toBeGreaterThan(0);
+    for (let i = 0; i < count; i += 1) {
+      const control = controls.nth(i);
+      const testid = (await control.getAttribute("data-testid")) ?? `index-${i}`;
+      const box = await control.boundingBox();
+      expect(box, `${testid} has a bounding box`).not.toBeNull();
+      if (!box) continue;
+      expect(box.height, `${testid} height >= 44px`).toBeGreaterThanOrEqual(44);
+      expect(box.width, `${testid} width >= 44px`).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test("the Relaxed toggle shows its on/off state without relying on colour alone", async ({ page }) => {
+    await openSetup(page, { width: 1280, height: 720 }, false);
+
+    const toggle = page.getByTestId("setup-relaxed");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    const off = await toggle.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { background: cs.backgroundColor, border: cs.borderColor };
+    });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    const on = await toggle.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { background: cs.backgroundColor, border: cs.borderColor };
+    });
+
+    // The visual state changes, and aria-pressed carries it for assistive tech.
+    expect(on.background, "pressed state is visually distinct").not.toBe(off.background);
+    await expect(toggle).toContainText("Relaxed build on");
+  });
+
   test("setup surface carries no serious automated accessibility violations", async ({ page }) => {
     await openSetup(page, { width: 1280, height: 720 }, false);
     const results = await new (await import("@axe-core/playwright")).default({ page }).analyze();
