@@ -1,24 +1,57 @@
 # Bridge Builder standalone qualification status
 
-**Current snapshot:** 2026-10-01
+**Current snapshot:** 2026-10-02
 
-**Candidate status:** `promoted-to-production` (the immutable artifact manifest remains `candidate-not-approved`)
+**Candidate status:** `promoted-to-production` (pointer merged; **Cloudflare Pages deploy pending**)
 
-**Current candidate:** `0.1.0-qualification.14` — published immutably to private R2 and served through the games-site production catalog. Verified live 2026-10-01: the production play route pins `/game-assets/bridge-builder/0.1.0-qualification.14/index.html`, and that manifest records source commit `9b4fdb0f0826ab893c9b70b0a50ce1b9521cdb89`. Production manifest and every listed asset verified by byte count and SHA-256 through the public route.
+**Current candidate:** `0.1.0-qualification.15` — published immutably to private R2 and selected by the merged games-site production catalog. Built from source commit `266491f470ea0b7e607154f50a0f2294606b3d79` (game-bridge-builder PR #20).
 
-**Rollback target:** `0.1.0-qualification.13` — still present and untouched in private R2 (the pointer live immediately before this promotion). It is **not** reachable over HTTP while the catalog approves only `.14`; see the rollback note below.
+**⚠ Promotion is committed but NOT yet live.** games-site PR #48 merged as `602c63a` with `verify` green, and the built play page pins `/game-assets/bridge-builder/0.1.0-qualification.15/index.html`. However `https://games.setnessconsulting.com/bridge-builder/play/` still serves `.14` and `.15` returns 404, verified continuously over roughly 20 minutes of polling. The production pointer therefore still selects `.14` in effect. This is a deploy-pipeline gap, not a candidate defect: games-site has no GitHub Actions deploy workflow and no repo webhook, so the Cloudflare Pages Git integration is not reporting a build for `602c63a`. Requires an owner-side Pages deploy (dashboard re-trigger or connection check). Until then the live player is `.14`, which is complete and playable.
 
-**Reviewed `main` head:** `b109039a1309cb3754586783b8d549d3a3b787ec`
+**Rollback target:** `0.1.0-qualification.14` — still present and untouched in private R2, and **still the live production pointer** while the `.15` deploy is pending. `.13` is retained as before.
+
+**Historical candidate `.14`** was promoted 2026-10-01 from source `9b4fdb0f0826ab893c9b70b0a50ce1b9521cdb89` for the GAME-297 reduced-motion success-payoff fix (games-site PR #43, merge `0d2d73d5`).
 
 **SDK pin:** Game Platform SDK `sdk-v0.1.1` (`8933746ebefe128a23b08f3fc9fd6796f4d906bd`)
 
-**Historical candidate `.10`** was the artifact promoted by [games-site PR #5](https://github.com/setnessconsulting/games-site/pull/5) (`914d5941`, Cloudflare Pages `17913bdd`) from source `c432122`. Production has since advanced to `.13`; the `.10` evidence below is retained as the record for that wave.
+**Historical candidate `.10`** was the artifact promoted by [games-site PR #5](https://github.com/setnessconsulting/games-site/pull/5) (`914d5941`, Cloudflare Pages `17913bdd`) from source `c432122`. Production has since advanced past `.13`; the `.10` evidence below is retained as the record for that wave.
+
+## Current candidate checks — candidate `.15`
+
+- **Origin.** GAME-297/GAME-361 follow-up found during the GAME-361 setup/start discoverability validation (game-bridge-builder PRs #19 and #20, merged `d42fb31` and `266491f`).
+- **What changed vs `.14`.** Presentation only:
+  - The setup screen's Relaxed toggle (`setup-relaxed`) rendered at **~31px**, the bare user-agent default, because it carried no class. It now has the same **48px** min-height, border, radius, background and font weight as the sibling `.bb-face-choice button`, plus the same pressed treatment. State is still never colour alone; `aria-pressed` is unchanged.
+  - The setup card tightens gap and padding under the existing `@media (max-height: 720px)` block so the added height costs no scroll. The 48px control height itself was never weakened.
+- **Regression caught and fixed before promotion.** The first cut of the touch-target change pushed the start action **1px past the fold at short phone 390x700**, failing the GAME-303 single-viewport lane (`scrollY starts at 0`, received 1) on all three CI retries. This was invisible at 1280x720. Fixed by the short-viewport spacing change above; GAME-303 passes at every viewport again.
+- **Release integrity.** Published immutably to private R2 under `bridge-builder/0.1.0-qualification.15/` after preflighting all 6 keys as absent, with the manifest published last. All 6 manifest-listed objects were read back from R2 and matched on **byte count and SHA-256**. The touch-target CSS was confirmed present in the published artifact.
+- **Verification.** typecheck clean, lint clean, unit **241/241**, E2E **61 passed / 7 hosted-only skipped / 0 failed** (the 7 are the pre-existing hosted-only skips in the unhosted environment). CI on head `10f78f9`: `verify` and `real-phaser-render` both green; post-merge CI on `266491f` green.
+- **games-site promotion.** PR #48, merge `602c63a`, `verify` green on the merge commit. Pointer-only: the committed catalog constant, the preview var, the resolved-play-source expectation, and the deployment/rollback records. No game source or immutable artifact changed in that repository. **Pages deploy pending — see the status note above.**
+- **Rollback.** `.14` stays published in private R2 and remains the live pointer. As with `.13` before it, `/game-assets/...` approves only the version the deployment names, so a version that is published but not pointed at is deliberately unreachable over HTTP. A rollback is a revert of the games-site pointer commit, not a re-publish.
+
+## GAME-361 setup/start discoverability — objective results
+
+Validated in real Chromium against `.14` and against a production build of main, at a true 1280x720 viewport, across both setup states (first session and returning player):
+
+- The primary start action is **fully inside the first viewport in every state** — first session's primary is "Start with no timer" (GAME-305 untimed-first), the returning player's is "Start building". Neither requires scrolling.
+- No horizontal overflow at 1280x720, 1366x768, 1280x600, 820x1180 or 390x844.
+- Tab order follows the visual order and reaches the primary start after the setup choices; the focused CTA paints `outline: 3px solid rgb(255,178,74)` at 3px offset, and Enter activates it.
+- 0 axe violations on the setup surface in both states.
+
+The 2026-09-22 AI playtest observation of "Start building" below a 720px fold **does not reproduce** and is not carried forward as a player-facing defect. It was a model-coordinate artifact: inside the hosted games-site iframe the usable height at a 1280x720 window is about **562px**, not 720px, so a coordinate-emitting model targeting 720px produces out-of-viewport actions by construction.
+
+Regression coverage lives in `tests/e2e/bridgeBuilder.start-discoverability-361.spec.ts` (15 tests). GAME-303 already locked the gameplay loop to one viewport; nothing had guarded the setup screen, which is the surface GAME-361 is about. A deliberate negative control (extra setup padding) was run to confirm the new guard fails on a real fold regression before the change was reverted.
+
+**Not claimed here:** GAME-361's acceptance criterion asks for a human first-time observation of whether the primary start action is found without guessing or coaching. That remains outstanding and belongs to GAME-172's benchmark/quality gate. Automated geometry, keyboard/focus and accessibility results are objective evidence only, not a substitute.
+
+## Known unrelated issue
+
+`tests/releaseManifest.test.ts` times out at its 5s default on a slow Windows host (it spawns a Node subprocess seven times). Confirmed **pre-existing on `d42fb31`** by stashing and re-running on clean main; passes in ~3.7s with a raised timeout and passes in CI. Not addressed by the `.15` promotion.
 
 **Owner decisions:** O-1 through O-8 were approved as policy decisions on 2026-09-17. The `GAME-294` renderer-contract and `GAME-295` curriculum-supply implementations are present and pass their automated checks; Jira review/closeout is still open. Their proposed thresholds remain proposed, not ratified. O-7 executors and dates remain open.
 
 This record distinguishes engineering checks from hosted, owner, and human-gated release evidence. LevelBest remains a separate integration.
 
-## Current candidate checks — candidate `.14`
+## Historical candidate checks — candidate `.14`
 
 - `.14` is the promoted production candidate, built from `9b4fdb0f0826ab893c9b70b0a50ce1b9521cdb89` (`game-bridge-builder` PR #18). It carries the whole GAME-297 player-ready presentation slice plus the GAME-302/303/304/305/306 follow-ups, the SDK-6/7 adoption work, and the reduced-motion success-payoff fix.
 - **Release integrity.** Published immutably to private R2 under `bridge-builder/0.1.0-qualification.14/` after preflighting every key as absent, manifest published last. All 6 manifest-listed objects were read back and matched on **byte count and SHA-256**, both directly from R2 and again through production after the catalog pointer moved.
@@ -78,12 +111,12 @@ This record distinguishes engineering checks from hosted, owner, and human-gated
 - Historical `.4` hosted preview: [Bridge Builder play route](https://83cdd01b.games-site-7pn.pages.dev/bridge-builder/play/) from branch `codex/bridge-builder-wave2-preview`, source `be4078a`. The current `.10` preview and production evidence are recorded above; the prior `.3` preview remains at [its versioned route](https://b2de4a6f.games-site-7pn.pages.dev/bridge-builder/play/).
 - The hosted Chromium journey passes against the actual `.10` iframe: the frame pins the exact version, creates a real Phaser canvas after Start, shows the DOM mirror, completes an exact-fit click placement, reads the candidate manifest, and verifies every listed object’s response, content type, immutable cache header, byte count, and hash. The entry and assets return `200` with immutable cache metadata. The separate GitHub SwiftShader lane verifies actual Phaser WebGL rendering and its negative control.
 - The manifest's hosted-preview field was pending when the immutable artifact was created; the dated post-upload hosted test result is recorded here, not written back into the versioned manifest.
-- Production [Bridge Builder page](https://games.setnessconsulting.com/bridge-builder/) is live at [the launcher](https://games.setnessconsulting.com/bridge-builder/) and [the play route](https://games.setnessconsulting.com/bridge-builder/play/); both resolve the `.10` catalog pointer. The production entry and exact `.10` asset returned `200`, with immutable caching and `nosniff`; LevelBest has not been changed.
+- Production [Bridge Builder page](https://games.setnessconsulting.com/bridge-builder/) is live at [the launcher](https://games.setnessconsulting.com/bridge-builder/) and [the play route](https://games.setnessconsulting.com/bridge-builder/play/). As of 2026-10-02 the live play route still resolves the `.14` catalog pointer because the `.15` Pages deploy has not run; see the status note at the top of this record. LevelBest has not been changed.
 - The immutable release manifest remains `candidate-not-approved` by design; production approval is represented by the reviewed games-site catalog merge above. The final hosted production journey passed (**1 passed**) against the custom domain, including exact-fit click placement, renderer readiness, duplicate-script regression coverage, and manifest asset/hash verification.
 
 ## Post-promotion follow-up
 
-The owner-approved GAME-297 promotions are complete: `.10` for the presentation slice, then `.14` for the reduced-motion payoff fix after the hosted sweep found the defect. The following broader qualification items remain follow-up hardening work and do not change the current Bridge Builder production pointer:
+The owner-approved GAME-297 promotions are complete: `.10` for the presentation slice, `.14` for the reduced-motion payoff fix after the hosted sweep found the defect, and `.15` for the setup touch-target follow-up (merged, Pages deploy pending). The following broader qualification items remain follow-up hardening work and do not change the current Bridge Builder production pointer:
 
 - Broader cross-surface lifecycle qualification for hidden-tab/pause-budget boundaries, failover, session containment, and teardown. Current tests cover the recorded candidate journeys and contract cases but do not close every Gate C/D lifecycle scenario.
 - Production design authority and handoff for GAME-171, including reviewed Figma states; an implementation candidate is not a substitute for approved art direction.
