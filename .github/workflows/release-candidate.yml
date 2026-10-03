@@ -30,6 +30,7 @@ permissions:
 
 jobs:
   validate:
+    timeout-minutes: 15
     runs-on: ubuntu-24.04
     steps:
       - name: Validate qualification-only release input
@@ -70,6 +71,7 @@ jobs:
           path: dist
 
   publish-r2:
+    timeout-minutes: 20
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_r2 }}
     needs: validate
     runs-on: ubuntu-24.04
