@@ -8,6 +8,18 @@
 
 **⚠ Promotion is committed but NOT yet live.** games-site PR #48 merged as `602c63a` with `verify` green, and the built play page pins `/game-assets/bridge-builder/0.1.0-qualification.15/index.html`. However `https://games.setnessconsulting.com/bridge-builder/play/` still serves `.14` and `.15` returns 404, verified continuously over roughly 20 minutes of polling. The production pointer therefore still selects `.14` in effect. This is a deploy-pipeline gap, not a candidate defect: games-site has no GitHub Actions deploy workflow and no repo webhook, so the Cloudflare Pages Git integration is not reporting a build for `602c63a`. Requires an owner-side Pages deploy (dashboard re-trigger or connection check). Until then the live player is `.14`, which is complete and playable.
 
+**Next action (owner-side, needs Cloudflare access):** in the Cloudflare dashboard open Workers & Pages → the games-site project → confirm the Git integration is still connected to `setnessconsulting/games-site` on `main`, and re-trigger the build for `602c63a`. The last recorded successful Pages deployment is 2026-09-26 (deployment `6684161309`, sha `3f1b59f`), so the integration may have detached. Then verify:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  https://games.setnessconsulting.com/game-assets/bridge-builder/0.1.0-qualification.15/index.html
+# expect 200
+curl -s https://games.setnessconsulting.com/bridge-builder/play/ | grep -o 'qualification\.[0-9]*'
+# expect qualification.15
+```
+
+A `.15` 404 while the pointer names it is expected until the deploy runs: `/game-assets/...` approves only the exact version the deployment names. A rollback is a revert of the games-site pointer commit `602c63a`, never a re-publish. Full handover detail is in the workspace-root `HANDOFF-GAME-361.md`.
+
 **Rollback target:** `0.1.0-qualification.14` — still present and untouched in private R2, and **still the live production pointer** while the `.15` deploy is pending. `.13` is retained as before.
 
 **Historical candidate `.14`** was promoted 2026-10-01 from source `9b4fdb0f0826ab893c9b70b0a50ce1b9521cdb89` for the GAME-297 reduced-motion success-payoff fix (games-site PR #43, merge `0d2d73d5`).
